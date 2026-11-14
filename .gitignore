@@ -1,0 +1,6 @@
+node_modules/
+.env
+points.json
+codes.json
+bills.json
+redeems.json
