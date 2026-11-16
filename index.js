@@ -17,33 +17,42 @@ const app = express();
 const SHEET_ID = '1LmmmwpByLKHmGf4bGzcRXFQolqMSo93nQW-1IwClxqg';
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/export?format=csv';
 var faqData = [];
+function parseFAQData(data) {
+  try {
+    var lines = data.split('\n');
+    var newFaq = [];
+    for (var i = 1; i < lines.length; i++) {
+      var line2 = lines[i].trim();
+      if (!line2) continue;
+      var match = line2.match(/^"?([^"]*)"?\s*,\s*"?([\s\S]*?)"?\s*$/);
+      if (match) {
+        newFaq.push({ q: match[1].trim().toLowerCase(), a: match[2].trim() });
+      } else {
+        var parts = line2.split(',');
+        if (parts.length >= 2) {
+          newFaq.push({ q: parts[0].trim().toLowerCase(), a: parts.slice(1).join(',').trim() });
+        }
+      }
+    }
+    faqData = newFaq;
+    console.log('FAQ loaded: ' + faqData.length + ' items');
+  } catch (e) { console.error('Error parsing FAQ:', e); }
+}
 function fetchFAQ() {
   return new Promise(function(resolve) {
     https.get(SHEET_CSV_URL, function(res) {
+      // Follow redirect
+      if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307) {
+        https.get(res.headers.location, function(res2) {
+          var data2 = '';
+          res2.on('data', function(chunk) { data2 += chunk; });
+          res2.on('end', function() { parseFAQData(data2); resolve(); });
+        }).on('error', function(e) { console.error('Redirect error:', e); resolve(); });
+        return;
+      }
       var data = '';
       res.on('data', function(chunk) { data += chunk; });
-      res.on('end', function() {
-        try {
-          var lines = data.split('\n');
-          var newFaq = [];
-          for (var i = 1; i < lines.length; i++) {
-            var line2 = lines[i].trim();
-            if (!line2) continue;
-            var match = line2.match(/^"?([^"]*)"?\s*,\s*"?([\s\S]*?)"?\s*$/);
-            if (match) {
-              newFaq.push({ q: match[1].trim().toLowerCase(), a: match[2].trim() });
-            } else {
-              var parts = line2.split(',');
-              if (parts.length >= 2) {
-                newFaq.push({ q: parts[0].trim().toLowerCase(), a: parts.slice(1).join(',').trim() });
-              }
-            }
-          }
-          faqData = newFaq;
-          console.log('FAQ loaded: ' + faqData.length + ' items');
-        } catch (e) { console.error('Error parsing FAQ:', e); }
-        resolve();
-      });
+      res.on('end', function() { parseFAQData(data); resolve(); });
     }).on('error', function(e) {
       console.error('Error fetching FAQ:', e);
       resolve();
