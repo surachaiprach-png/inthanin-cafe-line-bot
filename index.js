@@ -61,16 +61,35 @@ function fetchFAQ() {
 }
 function findFAQAnswer(question) {
   var q = question.toLowerCase().trim();
+  // 1. ตรงเป๊ะ
   for (var i = 0; i < faqData.length; i++) {
     if (faqData[i].q === q) return faqData[i].a;
   }
+  // 2. คำถามมีคำค้นอยู่ใน FAQ หรือกลับกัน
   for (var j = 0; j < faqData.length; j++) {
     if (q.indexOf(faqData[j].q) !== -1 || faqData[j].q.indexOf(q) !== -1) return faqData[j].a;
   }
-  for (var k = 0; k < faqData.length; k++) {
-    var keywords = faqData[k].q.split(/\s+/);
+  // 3. ตัดคำช่วยออกแล้วเทียบ
+  var stopWords = ['ร้าน','ที่','ไหน','ไหม','มี','ได้','อยู่','คือ','หรือ','นี้','นี่','ไป','มา','ยังไง','อะไร','เท่าไหร่','กี่','บ้าง','หน่อย','ค่ะ','ครับ','คะ','จ้า','จ๊ะ','นะ','เหรอ','รึ','มั้ย','ป่าว','the','is','a'];
+  function removeStopWords(text) {
+    var result = text;
+    for (var s = 0; s < stopWords.length; s++) {
+      result = result.split(stopWords[s]).join('');
+    }
+    return result.trim();
+  }
+  var cleanQ = removeStopWords(q);
+  if (cleanQ.length >= 2) {
+    for (var k = 0; k < faqData.length; k++) {
+      var cleanFaq = removeStopWords(faqData[k].q);
+      if (cleanFaq.length >= 2 && (cleanQ.indexOf(cleanFaq) !== -1 || cleanFaq.indexOf(cleanQ) !== -1)) return faqData[k].a;
+    }
+  }
+  // 4. คำสำคัญตรงกัน
+  for (var m = 0; m < faqData.length; m++) {
+    var keywords = faqData[m].q.split(/\s+/);
     for (var w = 0; w < keywords.length; w++) {
-      if (keywords[w].length >= 3 && q.indexOf(keywords[w]) !== -1) return faqData[k].a;
+      if (keywords[w].length >= 2 && stopWords.indexOf(keywords[w]) === -1 && q.indexOf(keywords[w]) !== -1) return faqData[m].a;
     }
   }
   return null;
