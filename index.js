@@ -40,23 +40,47 @@ function parseFAQData(data) {
 }
 function fetchFAQ() {
   return new Promise(function(resolve) {
-    https.get(SHEET_CSV_URL, function(res) {
-      // Follow redirect
-      if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307) {
-        https.get(res.headers.location, function(res2) {
-          var data2 = '';
-          res2.on('data', function(chunk) { data2 += chunk; });
-          res2.on('end', function() { parseFAQData(data2); resolve(); });
-        }).on('error', function(e) { console.error('Redirect error:', e); resolve(); });
-        return;
-      }
-      var data = '';
-      res.on('data', function(chunk) { data += chunk; });
-      res.on('end', function() { parseFAQData(data); resolve(); });
-    }).on('error', function(e) {
-      console.error('Error fetching FAQ:', e);
-      resolve();
-    });
+    function doGet(url) {
+      https.get(url, function(res) {
+        // จัดการ redirect (301, 302, 307)
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          console.log('FAQ redirect to: ' + res.headers.location);
+          doGet(res.headers.location);
+          return;
+        }
+        var data = '';
+        res.on('data', function(chunk) { data += chunk; });
+        res.on('end', function() {
+          try {
+            var lines = data.split('\n');
+            var newFaq = [];
+            for (var i = 1; i < lines.length; i++) {
+              var line2 = lines[i].trim().replace(/,\s*$/,''); // ตัด trailing comma
+              if (!line2) continue;
+              var match = line2.match(/^"?([^"]*)"?\s*,\s*"?([\s\S]*?)"?\s*$/);
+              if (match) {
+                newFaq.push({ q: match[1].trim().toLowerCase(), a: match[2].trim() });
+              } else {
+                var parts = line2.split(',');
+                if (parts.length >= 2) {
+                  newFaq.push({ q: parts[0].trim().toLowerCase(), a: parts.slice(1).join(',').trim() });
+                }
+              }
+            }
+            faqData = newFaq;
+            console.log('FAQ loaded: ' + faqData.length + ' items');
+            for (var d = 0; d < faqData.length; d++) {
+              console.log('  FAQ[' + d + ']: ' + faqData[d].q + ' => ' + faqData[d].a.substring(0,30));
+            }
+          } catch (e) { console.error('Error parsing FAQ:', e); }
+          resolve();
+        });
+      }).on('error', function(e) {
+        console.error('Error fetching FAQ:', e);
+        resolve();
+      });
+    }
+    doGet(SHEET_CSV_URL);
   });
 }
 function findFAQAnswer(question) {
