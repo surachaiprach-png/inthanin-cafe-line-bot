@@ -1,8 +1,6 @@
 const express = require('express');
 const line = require('@line/bot-sdk');
-const fs = require('fs');
 const https = require('https');
-const path = require('path');
 require('dotenv').config();
 
 const config = {
@@ -18,6 +16,74 @@ const SHEET_ID = '1LmmmwpByLKHmGf4bGzcRXFQolqMSo93nQW-1IwClxqg';
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/export?format=csv';
 var faqData = [];
 
+// ===== Google Sheets Database API =====
+// ใส่ URL ของ Apps Script Web App ใน .env หรือ Render Environment
+const SHEET_API_URL = process.env.SHEET_API_URL || '';
+
+// ===== ฟังก์ชันเรียก API =====
+function callSheetAPI(body) {
+  return new Promise(function(resolve, reject) {
+    if (!SHEET_API_URL) {
+      reject(new Error('SHEET_API_URL not configured'));
+      return;
+    }
+    var postData = JSON.stringify(body);
+    var urlObj = new URL(SHEET_API_URL);
+
+    var options = {
+      hostname: urlObj.hostname,
+      port: 443,
+      path: urlObj.pathname,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    };
+
+    function doRequest(reqUrl) {
+      var u = new URL(reqUrl);
+      var opts = {
+        hostname: u.hostname,
+        port: 443,
+        path: u.pathname + u.search,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(postData)
+        }
+      };
+      var req = https.request(opts, function(res) {
+        // Google Apps Script returns 302 redirect after POST
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          // Follow redirect with GET
+          https.get(res.headers.location, function(res2) {
+            var data = '';
+            res2.on('data', function(chunk) { data += chunk; });
+            res2.on('end', function() {
+              try { resolve(JSON.parse(data)); }
+              catch (e) { reject(new Error('Invalid JSON: ' + data.substring(0, 200))); }
+            });
+          }).on('error', reject);
+          return;
+        }
+        var data = '';
+        res.on('data', function(chunk) { data += chunk; });
+        res.on('end', function() {
+          try { resolve(JSON.parse(data)); }
+          catch (e) { reject(new Error('Invalid JSON: ' + data.substring(0, 200))); }
+        });
+      });
+      req.on('error', reject);
+      req.write(postData);
+      req.end();
+    }
+
+    doRequest(SHEET_API_URL);
+  });
+}
+
+// ===== CSV Parser =====
 function parseCSVLine(line) {
   var result = [];
   var current = '';
@@ -25,53 +91,24 @@ function parseCSVLine(line) {
   for (var i = 0; i < line.length; i++) {
     if (inQuotes) {
       if (line[i] === '"' && i+1 < line.length && line[i+1] === '"') {
-        current += '"';
-        i++;
-      } else if (line[i] === '"') {
-        inQuotes = false;
-      } else {
-        current += line[i];
-      }
+        current += '"'; i++;
+      } else if (line[i] === '"') { inQuotes = false; }
+      else { current += line[i]; }
     } else {
-      if (line[i] === '"') {
-        inQuotes = true;
-      } else if (line[i] === ',') {
-        result.push(current.trim());
-        current = '';
-      } else {
-        current += line[i];
-      }
+      if (line[i] === '"') { inQuotes = true; }
+      else if (line[i] === ',') { result.push(current.trim()); current = ''; }
+      else { current += line[i]; }
     }
   }
   result.push(current.trim());
   return result;
 }
-function parseFAQData(data) {
-  try {
-    var lines = data.split('\n');
-    var newFaq = [];
-    for (var i = 1; i < lines.length; i++) {
-      var line2 = lines[i].trim().replace(/,\s*$/,'');
-      if (!line2) continue;
-      var match = line2.match(/^"?([^"]*)"?\s*,\s*"?([\s\S]*?)"?\s*$/);
-      if (match) {
-        newFaq.push({ q: match[1].trim().toLowerCase(), a: match[2].trim() });
-      } else {
-        var parts = line2.split(',');
-        if (parts.length >= 2) {
-          newFaq.push({ q: parts[0].trim().toLowerCase(), a: parts.slice(1).join(',').trim() });
-        }
-      }
-    }
-    faqData = newFaq;
-    console.log('FAQ loaded: ' + faqData.length + ' items');
-  } catch (e) { console.error('Error parsing FAQ:', e); }
-}
+
+// ===== FAQ Functions =====
 function fetchFAQ() {
   return new Promise(function(resolve) {
     function doGet(url) {
       https.get(url, function(res) {
-        // จัดการ redirect (301, 302, 307)
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           console.log('FAQ redirect to: ' + res.headers.location);
           doGet(res.headers.location);
@@ -80,23 +117,18 @@ function fetchFAQ() {
         var data = '';
         res.on('data', function(chunk) { data += chunk; });
         res.on('end', function() {
-          try {
-            var lines = data.split('\n');
-            var newFaq = [];
-            for (var i = 1; i < lines.length; i++) {
-              var line2 = lines[i].trim();
-              if (!line2) continue;
-              var fields = parseCSVLine(line2);
-              if (fields.length >= 2 && fields[0] && fields[1]) {
-                newFaq.push({ q: fields[0].toLowerCase(), a: fields[1] });
-              }
+          var lines = data.split('\n');
+          var newFaq = [];
+          for (var i = 1; i < lines.length; i++) {
+            var line2 = lines[i].trim();
+            if (!line2) continue;
+            var fields = parseCSVLine(line2);
+            if (fields.length >= 2 && fields[0] && fields[1]) {
+              newFaq.push({ q: fields[0].toLowerCase(), a: fields[1] });
             }
-            faqData = newFaq;
-            console.log('FAQ loaded: ' + faqData.length + ' items');
-            for (var d = 0; d < faqData.length; d++) {
-              console.log('  FAQ[' + d + ']: ' + faqData[d].q + ' => ' + faqData[d].a.substring(0,30));
-            }
-          } catch (e) { console.error('Error parsing FAQ:', e); }
+          }
+          faqData = newFaq;
+          console.log('FAQ loaded: ' + faqData.length + ' items');
           resolve();
         });
       }).on('error', function(e) {
@@ -107,23 +139,22 @@ function fetchFAQ() {
     doGet(SHEET_CSV_URL);
   });
 }
+
 function findFAQAnswer(question) {
   var q = question.toLowerCase().trim();
   // 1. ตรงเป๊ะ
   for (var i = 0; i < faqData.length; i++) {
     if (faqData[i].q === q) return faqData[i].a;
   }
-  // 2. มีคำค้นอยู่ในอีกฝั่ง
+  // 2. Substring match
   for (var j = 0; j < faqData.length; j++) {
     if (q.indexOf(faqData[j].q) !== -1 || faqData[j].q.indexOf(q) !== -1) return faqData[j].a;
   }
-  // 3. Bigram matching (เหมาะกับภาษาไทยที่ไม่มีเว้นวรรค)
+  // 3. Bigram matching (สำหรับภาษาไทย)
   function getBigrams(text) {
     var chars = Array.from(text);
     var bg = [];
-    for (var i = 0; i < chars.length - 1; i++) {
-      bg.push(chars[i] + chars[i+1]);
-    }
+    for (var i = 0; i < chars.length - 1; i++) { bg.push(chars[i] + chars[i+1]); }
     return bg;
   }
   var qBigrams = getBigrams(q);
@@ -137,89 +168,92 @@ function findFAQAnswer(question) {
       if (qBigrams.indexOf(faqBg[b]) !== -1) matchCount++;
     }
     var score = matchCount / faqBg.length;
-    if (score > bestScore && matchCount >= 2) {
-      bestScore = score;
-      bestIdx = k;
-    }
+    if (score > bestScore && matchCount >= 2) { bestScore = score; bestIdx = k; }
   }
   if (bestScore >= 0.4 && bestIdx >= 0) return faqData[bestIdx].a;
   return null;
 }
+
+// โหลด FAQ ทุก 5 นาที
 fetchFAQ();
 setInterval(fetchFAQ, 5 * 60 * 1000);
+
 // ===== ตั้งค่า =====
-const DB_FILE = path.join(__dirname, 'points.json');
-const CODES_FILE = path.join(__dirname, 'codes.json');
-const BILLS_FILE = path.join(__dirname, 'bills.json');
-const REDEEMS_FILE = path.join(__dirname, 'redeems.json');
-const ADMIN_PIN = '1234';
-const CODE_EXPIRE_MINUTES = 1440;
+const ADMIN_PIN = process.env.ADMIN_PIN || '1234';
+const CODE_EXPIRE_MINUTES = 1440; // 24 ชั่วโมง
 const REDEEM_COST = 15;
 
-// ===== ระบบเก็บแต้ม =====
-function loadDB() {
+// ===== ระบบเก็บแต้ม (Google Sheets) =====
+async function getPoints(userId) {
   try {
-    if (fs.existsSync(DB_FILE)) return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-  } catch (e) { console.error('Error loading DB:', e); }
-  return {};
-}
-
-function saveDB(data) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8');
-}
-
-function getPoints(userId) {
-  const db = loadDB();
-  if (!db[userId]) {
-    db[userId] = { points: 0, totalEarned: 0, redeemed: 0, name: '' };
-    saveDB(db);
+    var result = await callSheetAPI({ action: 'getCustomer', userId: userId });
+    if (!result.found) {
+      // สร้างลูกค้าใหม่
+      await callSheetAPI({ action: 'setCustomer', userId: userId, data: { points: 0, totalEarned: 0, redeemed: 0, name: '' } });
+      return { points: 0, totalEarned: 0, redeemed: 0, name: '' };
+    }
+    return { points: Number(result.points), totalEarned: Number(result.totalEarned), redeemed: Number(result.redeemed), name: result.name || '' };
+  } catch (e) {
+    console.error('Error getPoints:', e);
+    return { points: 0, totalEarned: 0, redeemed: 0, name: '' };
   }
-  return db[userId];
 }
 
-function addPoints(userId, count) {
-  const db = loadDB();
-  if (!db[userId]) db[userId] = { points: 0, totalEarned: 0, redeemed: 0, name: '' };
-  db[userId].points += count;
-  db[userId].totalEarned += count;
-  saveDB(db);
-  return db[userId];
+async function addPoints(userId, count) {
+  try {
+    var user = await getPoints(userId);
+    var newPoints = user.points + count;
+    var newTotal = user.totalEarned + count;
+    await callSheetAPI({ action: 'setCustomer', userId: userId, data: { points: newPoints, totalEarned: newTotal } });
+    return { points: newPoints, totalEarned: newTotal, redeemed: user.redeemed, name: user.name };
+  } catch (e) {
+    console.error('Error addPoints:', e);
+    return null;
+  }
 }
 
 async function updateUserName(userId) {
   try {
-    const profile = await client.getProfile(userId);
-    const db = loadDB();
-    if (db[userId]) {
-      db[userId].name = profile.displayName;
-      saveDB(db);
-    }
+    var profile = await client.getProfile(userId);
+    await callSheetAPI({ action: 'setCustomer', userId: userId, data: { name: profile.displayName } });
   } catch (e) { console.error('Error getting profile:', e); }
 }
 
-function redeemPoints(userId, cost) {
-  const db = loadDB();
-  if (!db[userId] || db[userId].points < cost) return null;
-  db[userId].points -= cost;
-  db[userId].redeemed += 1;
-  saveDB(db);
-  var redeemCode = logRedeem(userId, cost, db[userId].name);
-  return { user: db[userId], redeemCode: redeemCode };
-}
-
-// ===== ระบบบันทึกการแลก =====
-function loadRedeems() {
+async function redeemPoints(userId, cost) {
   try {
-    if (fs.existsSync(REDEEMS_FILE)) return JSON.parse(fs.readFileSync(REDEEMS_FILE, 'utf8'));
-  } catch (e) { console.error('Error loading redeems:', e); }
-  return [];
+    var user = await getPoints(userId);
+    if (user.points < cost) return null;
+
+    var newPoints = user.points - cost;
+    var newRedeemed = user.redeemed + 1;
+    await callSheetAPI({ action: 'setCustomer', userId: userId, data: { points: newPoints, redeemed: newRedeemed } });
+
+    var redeemCode = await generateUniqueRedeemCode();
+    await callSheetAPI({ action: 'addRedeem', data: {
+      redeemCode: redeemCode,
+      userId: userId,
+      name: user.name || '',
+      cost: cost,
+      redeemedAt: new Date().toISOString()
+    }});
+    return { user: { points: newPoints, totalEarned: user.totalEarned, redeemed: newRedeemed, name: user.name }, redeemCode: redeemCode };
+  } catch (e) {
+    console.error('Error redeemPoints:', e);
+    return null;
+  }
 }
 
-function saveRedeems(data) {
-  fs.writeFileSync(REDEEMS_FILE, JSON.stringify(data, null, 2), 'utf8');
+// ===== ระบบรหัส =====
+function generateCodeStr() {
+  var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  var code = '';
+  for (var i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
 }
 
-function generateRedeemCode() {
+function generateRedeemCodeStr() {
   var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   var code = 'R-';
   for (var i = 0; i < 6; i++) {
@@ -228,193 +262,89 @@ function generateRedeemCode() {
   return code;
 }
 
-function logRedeem(userId, cost, name) {
-  const redeems = loadRedeems();
-  var redeemCode;
-  do {
-    redeemCode = generateRedeemCode();
-  } while (redeems.some(function(r) { return r.redeemCode === redeemCode; }));
-
-  redeems.push({
-    redeemCode: redeemCode,
-    userId: userId,
-    name: name || '',
-    cost: cost,
-    redeemedAt: new Date().toISOString(),
-    confirmed: false,
-  });
-  saveRedeems(redeems);
-  return redeemCode;
-}
-
-function verifyRedeem(redeemCode) {
-  var redeems = loadRedeems();
-  var found = null;
-  for (var i = 0; i < redeems.length; i++) {
-    if (redeems[i].redeemCode === redeemCode.toUpperCase()) {
-      found = redeems[i];
-      if (found.confirmed) {
-        return { error: 'already_confirmed', redeem: found };
-      }
-      redeems[i].confirmed = true;
-      redeems[i].confirmedAt = new Date().toISOString();
-      saveRedeems(redeems);
-      return { success: true, redeem: found };
-    }
+async function generateUniqueCode() {
+  var code;
+  var maxTries = 10;
+  for (var i = 0; i < maxTries; i++) {
+    code = generateCodeStr();
+    var result = await callSheetAPI({ action: 'codeExists', code: code });
+    if (!result.exists) return code;
   }
-  return { error: 'not_found' };
+  return code; // fallback
 }
 
-// ===== ระบบสรุปยอดประจำวัน =====
-function getDateString(date) {
-  const d = new Date(date);
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  return dd + '/' + mm + '/' + yyyy;
-}
-
-function isSameDate(isoString, targetDate) {
-  const d = new Date(isoString);
-  return d.getFullYear() === targetDate.getFullYear() &&
-    d.getMonth() === targetDate.getMonth() &&
-    d.getDate() === targetDate.getDate();
-}
-
-function getDailySummary(targetDate) {
-  const bills = loadBills();
-  const codes = loadCodes();
-  const redeems = loadRedeems();
-  const db = loadDB();
-
-  const dayBills = [];
-  let totalPoints = 0;
-  for (const billNo of Object.keys(bills)) {
-    if (isSameDate(bills[billNo].createdAt, targetDate)) {
-      dayBills.push({ billNo: billNo, points: bills[billNo].points, code: bills[billNo].code });
-      totalPoints += bills[billNo].points;
-    }
-  }
-
-  let usedCodes = 0;
-  let unusedCodes = 0;
-  for (const code of Object.keys(codes)) {
-    if (isSameDate(codes[code].createdAt, targetDate)) {
-      if (codes[code].used) { usedCodes++; } else { unusedCodes++; }
-    }
-  }
-
-  const dayRedeems = redeems.filter(function(r) { return isSameDate(r.redeemedAt, targetDate); });
-
-  const dayNewCustomers = [];
-  for (const code of Object.keys(codes)) {
-    if (codes[code].used && codes[code].usedAt && isSameDate(codes[code].usedAt, targetDate)) {
-      const uid = codes[code].usedBy;
-      if (db[uid] && db[uid].totalEarned <= codes[code].points) {
-        dayNewCustomers.push(db[uid].name || 'ไม่ทราบชื่อ');
-      }
-    }
-  }
-
-  return {
-    date: getDateString(targetDate),
-    billCount: dayBills.length,
-    bills: dayBills,
-    totalPoints: totalPoints,
-    usedCodes: usedCodes,
-    unusedCodes: unusedCodes,
-    redeemCount: dayRedeems.length,
-    redeemNames: dayRedeems.map(function(r) { return r.name || 'ไม่ทราบชื่อ'; }),
-    newCustomers: dayNewCustomers,
-  };
-}
-
-// ===== ระบบรหัสสะสมแต้ม (One-time Code) =====
-function loadCodes() {
-  try {
-    if (fs.existsSync(CODES_FILE)) return JSON.parse(fs.readFileSync(CODES_FILE, 'utf8'));
-  } catch (e) { console.error('Error loading codes:', e); }
-  return {};
-}
-
-function saveCodes(data) {
-  fs.writeFileSync(CODES_FILE, JSON.stringify(data, null, 2), 'utf8');
-}
-
-function generateCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code = '';
-  for (let i = 0; i < 6; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
+async function generateUniqueRedeemCode() {
+  var code;
+  var maxTries = 10;
+  for (var i = 0; i < maxTries; i++) {
+    code = generateRedeemCodeStr();
+    var result = await callSheetAPI({ action: 'redeemCodeExists', redeemCode: code });
+    if (!result.exists) return code;
   }
   return code;
 }
 
-// ===== ระบบเลขบิล =====
-function loadBills() {
+async function isBillUsed(billNo) {
   try {
-    if (fs.existsSync(BILLS_FILE)) return JSON.parse(fs.readFileSync(BILLS_FILE, 'utf8'));
-  } catch (e) { console.error('Error loading bills:', e); }
-  return {};
+    var result = await callSheetAPI({ action: 'getBill', billNo: billNo });
+    return result.found === true;
+  } catch (e) { return false; }
 }
 
-function saveBills(data) {
-  fs.writeFileSync(BILLS_FILE, JSON.stringify(data, null, 2), 'utf8');
-}
-
-function isBillUsed(billNo) {
-  const bills = loadBills();
-  return !!bills[billNo];
-}
-
-function saveBill(billNo, code, points, staffId) {
-  const bills = loadBills();
-  bills[billNo] = {
-    code: code,
-    points: points,
-    createdBy: staffId,
-    createdAt: new Date().toISOString(),
-  };
-  saveBills(bills);
-}
-
-function createCode(staffId, pointsAmount, billNo) {
-  const codes = loadCodes();
-  let code;
-  do {
-    code = generateCode();
-  } while (codes[code]);
-
-  codes[code] = {
+async function createCode(staffId, pointsAmount, billNo) {
+  var code = await generateUniqueCode();
+  var now = new Date().toISOString();
+  await callSheetAPI({ action: 'setCode', code: code, data: {
     points: pointsAmount,
     billNo: billNo,
     createdBy: staffId,
-    createdAt: new Date().toISOString(),
-    used: false,
-  };
-  saveCodes(codes);
-  saveBill(billNo, code, pointsAmount, staffId);
+    createdAt: now,
+    used: false
+  }});
+  await callSheetAPI({ action: 'setBill', billNo: billNo, data: {
+    code: code,
+    points: pointsAmount,
+    createdBy: staffId,
+    createdAt: now
+  }});
   return code;
 }
 
-function useCode(code, userId) {
-  const codes = loadCodes();
-  const upperCode = code.toUpperCase();
+async function useCode(code, userId) {
+  try {
+    var upperCode = code.toUpperCase();
+    var result = await callSheetAPI({ action: 'getCode', code: upperCode });
 
-  if (!codes[upperCode]) return { error: 'not_found' };
-  if (codes[upperCode].used) return { error: 'already_used' };
+    if (!result.found) return { error: 'not_found' };
+    if (result.used === true || result.used === 'TRUE' || result.used === 'true') return { error: 'already_used' };
 
-  const created = new Date(codes[upperCode].createdAt);
-  const now = new Date();
-  const diffMinutes = (now - created) / (1000 * 60);
-  if (diffMinutes > CODE_EXPIRE_MINUTES) return { error: 'expired' };
+    // เช็คหมดอายุ
+    var created = new Date(result.createdAt);
+    var now = new Date();
+    var diffMinutes = (now - created) / (1000 * 60);
+    if (diffMinutes > CODE_EXPIRE_MINUTES) return { error: 'expired' };
 
-  codes[upperCode].used = true;
-  codes[upperCode].usedBy = userId;
-  codes[upperCode].usedAt = new Date().toISOString();
-  saveCodes(codes);
+    // ใช้รหัสสำเร็จ
+    await callSheetAPI({ action: 'setCode', code: upperCode, data: {
+      used: true,
+      usedBy: userId,
+      usedAt: new Date().toISOString()
+    }});
+    return { success: true, points: Number(result.points) };
+  } catch (e) {
+    console.error('Error useCode:', e);
+    return { error: 'system_error' };
+  }
+}
 
-  return { success: true, points: codes[upperCode].points };
+async function verifyRedeem(redeemCode) {
+  try {
+    var result = await callSheetAPI({ action: 'confirmRedeem', redeemCode: redeemCode.toUpperCase() });
+    return result;
+  } catch (e) {
+    console.error('Error verifyRedeem:', e);
+    return { error: 'system_error' };
+  }
 }
 
 // ===== Webhook =====
@@ -442,10 +372,10 @@ async function handleEvent(event) {
       replyText = '❌ รหัสไม่ถูกต้อง';
     } else if (count < 1 || count > 20) {
       replyText = '❌ ใส่จำนวน 1-20 แก้ว';
-    } else if (isBillUsed(billNo)) {
+    } else if (await isBillUsed(billNo)) {
       replyText = '❌ บิลเลขที่ ' + billNo + ' ถูกใช้ไปแล้ว!';
     } else {
-      const code = createCode(userId, count, billNo);
+      const code = await createCode(userId, count, billNo);
       replyText = '✅ สร้างรหัสสำเร็จ!\n\n🎫 รหัส: ' + code + '\n🧾 บิล: ' + billNo + '\n☕ จำนวน: ' + count + ' แต้ม\n⏰ หมดอายุใน 24 ชั่วโมง\n\nบอกรหัสนี้ให้ลูกค้า';
     }
     return client.replyMessage(event.replyToken, { type: 'text', text: replyText });
@@ -458,24 +388,27 @@ async function handleEvent(event) {
     if (pin !== ADMIN_PIN) {
       replyText = '❌ รหัสไม่ถูกต้อง';
     } else {
-      const db = loadDB();
-      const users = Object.keys(db);
-      if (users.length === 0) {
-        replyText = '📊 ยังไม่มีลูกค้าในระบบ';
-      } else {
-        let summary = '📊 สรุปแต้มลูกค้า (' + users.length + ' คน)\n\n';
-        let totalPoints = 0;
-        let i = 1;
-        for (const uid of users) {
-          const u = db[uid];
-          totalPoints += u.points;
-          const name = u.name || 'ไม่ทราบชื่อ';
-          summary += i + '. ' + name + '\n   แต้ม: ' + u.points + ' | รวมสะสม: ' + u.totalEarned + ' | แลกแล้ว: ' + u.redeemed + ' ครั้ง\n';
-          i++;
-          if (i > 20) { summary += '...(แสดง 20 คนแรก)\n'; break; }
+      try {
+        var allResult = await callSheetAPI({ action: 'getAllCustomers' });
+        var users = allResult.customers || [];
+        if (users.length === 0) {
+          replyText = '📊 ยังไม่มีลูกค้าในระบบ';
+        } else {
+          let summary = '📊 สรุปแต้มลูกค้า (' + users.length + ' คน)\n\n';
+          let totalPoints = 0;
+          for (var i = 0; i < users.length && i < 20; i++) {
+            var u = users[i];
+            totalPoints += Number(u.points);
+            var name = u.name || 'ไม่ทราบชื่อ';
+            summary += (i + 1) + '. ' + name + '\n   แต้ม: ' + u.points + ' | รวมสะสม: ' + u.totalEarned + ' | แลกแล้ว: ' + u.redeemed + ' ครั้ง\n';
+          }
+          if (users.length > 20) summary += '...(แสดง 20 คนแรก)\n';
+          summary += '\n🏆 แต้มรวมทั้งระบบ: ' + totalPoints;
+          replyText = summary;
         }
-        summary += '\n🏆 แต้มรวมทั้งระบบ: ' + totalPoints;
-        replyText = summary;
+      } catch (e) {
+        console.error('Error checking:', e);
+        replyText = '❌ เกิดข้อผิดพลาดในการดึงข้อมูล';
       }
     }
     return client.replyMessage(event.replyToken, { type: 'text', text: replyText });
@@ -488,46 +421,40 @@ async function handleEvent(event) {
     if (pin !== ADMIN_PIN) {
       replyText = '❌ รหัสไม่ถูกต้อง';
     } else {
-      var targetDate;
-      if (summaryMatch[2] && summaryMatch[3] && summaryMatch[4]) {
-        var dd = parseInt(summaryMatch[2]);
-        var mm = parseInt(summaryMatch[3]) - 1;
-        var yyyy = parseInt(summaryMatch[4]);
-        targetDate = new Date(yyyy, mm, dd);
-      } else {
-        targetDate = new Date();
-      }
-
-      var s = getDailySummary(targetDate);
-
-      var text = '📋 สรุปยอดประจำวัน\n';
-      text += '📅 วันที่: ' + s.date + '\n';
-      text += '━━━━━━━━━━━━━━━\n';
-      text += '🧾 จำนวนบิล: ' + s.billCount + ' บิล\n';
-      if (s.bills.length > 0) {
-        text += '📝 เลขที่บิล:\n';
-        for (var b = 0; b < s.bills.length; b++) {
-          text += '   ' + (b + 1) + '. ' + s.bills[b].billNo + ' (' + s.bills[b].points + ' แต้ม)\n';
+      try {
+        var dateStr = null;
+        if (summaryMatch[2] && summaryMatch[3] && summaryMatch[4]) {
+          dateStr = summaryMatch[2].padStart(2, '0') + '/' + summaryMatch[3].padStart(2, '0') + '/' + summaryMatch[4];
         }
-      }
-      text += '━━━━━━━━━━━━━━━\n';
-      text += '☕ แต้มที่ให้ทั้งหมด: ' + s.totalPoints + ' แต้ม\n';
-      text += '✅ รหัสที่ใช้แล้ว: ' + s.usedCodes + ' รหัส\n';
-      text += '⏳ รหัสยังไม่ได้ใช้: ' + s.unusedCodes + ' รหัส\n';
-      text += '━━━━━━━━━━━━━━━\n';
-      text += '🎁 จำนวนแลกฟรี: ' + s.redeemCount + ' ครั้ง\n';
-      if (s.redeemNames.length > 0) {
-        text += '👤 ผู้แลก: ' + s.redeemNames.join(', ') + '\n';
-      }
-      if (s.newCustomers.length > 0) {
-        text += '🆕 ลูกค้าใหม่: ' + s.newCustomers.length + ' คน (' + s.newCustomers.join(', ') + ')\n';
-      }
+        var s = await callSheetAPI({ action: 'getDailySummary', date: dateStr });
 
-      if (s.billCount === 0 && s.redeemCount === 0) {
-        text += '\n💤 ไม่มีรายการในวันนี้';
+        var text = '📋 สรุปยอดประจำวัน\n';
+        text += '📅 วันที่: ' + s.date + '\n';
+        text += '━━━━━━━━━━━━━━━\n';
+        text += '🧾 จำนวนบิล: ' + s.billCount + ' บิล\n';
+        if (s.bills && s.bills.length > 0) {
+          text += '📝 เลขที่บิล:\n';
+          for (var b = 0; b < s.bills.length; b++) {
+            text += '   ' + (b + 1) + '. ' + s.bills[b].billNo + ' (' + s.bills[b].points + ' แต้ม)\n';
+          }
+        }
+        text += '━━━━━━━━━━━━━━━\n';
+        text += '☕ แต้มที่ให้ทั้งหมด: ' + s.totalPoints + ' แต้ม\n';
+        text += '✅ รหัสที่ใช้แล้ว: ' + s.usedCodes + ' รหัส\n';
+        text += '⏳ รหัสยังไม่ได้ใช้: ' + s.unusedCodes + ' รหัส\n';
+        text += '━━━━━━━━━━━━━━━\n';
+        text += '🎁 จำนวนแลกฟรี: ' + s.redeemCount + ' ครั้ง\n';
+        if (s.redeemNames && s.redeemNames.length > 0) {
+          text += '👤 ผู้แลก: ' + s.redeemNames.join(', ') + '\n';
+        }
+        if (s.billCount === 0 && s.redeemCount === 0) {
+          text += '\n💤 ไม่มีรายการในวันนี้';
+        }
+        replyText = text;
+      } catch (e) {
+        console.error('Error summary:', e);
+        replyText = '❌ เกิดข้อผิดพลาดในการดึงข้อมูล';
       }
-
-      replyText = text;
     }
     return client.replyMessage(event.replyToken, { type: 'text', text: replyText });
   }
@@ -540,13 +467,15 @@ async function handleEvent(event) {
     if (pin4 !== ADMIN_PIN) {
       replyText = '❌ รหัสไม่ถูกต้อง';
     } else {
-      var vResult = verifyRedeem(rCode);
+      var vResult = await verifyRedeem(rCode);
       if (vResult.error === 'not_found') {
         replyText = '❌ ไม่พบรหัสแลก ' + rCode + '\n\n⚠️ อาจเป็นรหัสปลอม!';
       } else if (vResult.error === 'already_confirmed') {
-        replyText = '⚠️ รหัส ' + rCode + ' ถูกยืนยันไปแล้ว!\n\n👤 ชื่อ: ' + (vResult.redeem.name || 'ไม่ทราบ') + '\n🕐 แลกเมื่อ: ' + vResult.redeem.redeemedAt.replace('T', ' ').substring(0, 19) + '\n\n❌ ไม่สามารถใช้ซ้ำได้';
+        replyText = '⚠️ รหัส ' + rCode + ' ถูกยืนยันไปแล้ว!\n\n👤 ชื่อ: ' + (vResult.redeem.name || 'ไม่ทราบ') + '\n\n❌ ไม่สามารถใช้ซ้ำได้';
+      } else if (vResult.success) {
+        replyText = '✅ ยืนยันสำเร็จ! รหัส ' + rCode + '\n\n👤 ชื่อลูกค้า: ' + (vResult.redeem.name || 'ไม่ทราบ') + '\n\n☕ ให้เครื่องดื่มฟรี 1 แก้วได้เลย!';
       } else {
-        replyText = '✅ ยืนยันสำเร็จ! รหัส ' + rCode + '\n\n👤 ชื่อลูกค้า: ' + (vResult.redeem.name || 'ไม่ทราบ') + '\n🕐 แลกเมื่อ: ' + vResult.redeem.redeemedAt.replace('T', ' ').substring(0, 19) + '\n\n☕ ให้เครื่องดื่มฟรี 1 แก้วได้เลย!';
+        replyText = '❌ เกิดข้อผิดพลาด กรุณาลองใหม่';
       }
     }
     return client.replyMessage(event.replyToken, { type: 'text', text: replyText });
@@ -556,7 +485,7 @@ async function handleEvent(event) {
   const redeemCodeMatch = msg.match(/^สะสม[:\s]([A-Za-z0-9]{6})$/);
   if (redeemCodeMatch) {
     const code = redeemCodeMatch[1];
-    const result = useCode(code, userId);
+    const result = await useCode(code, userId);
 
     if (result.error === 'not_found') {
       replyText = '❌ ไม่พบรหัสนี้ กรุณาตรวจสอบอีกครั้ง';
@@ -564,9 +493,11 @@ async function handleEvent(event) {
       replyText = '❌ รหัสนี้ถูกใช้ไปแล้ว';
     } else if (result.error === 'expired') {
       replyText = '❌ รหัสนี้หมดอายุแล้ว กรุณาขอรหัสใหม่จากพนักงาน';
+    } else if (result.error) {
+      replyText = '❌ เกิดข้อผิดพลาด กรุณาลองใหม่';
     } else {
-      const user = addPoints(userId, result.points);
-      updateUserName(userId);
+      const user = await addPoints(userId, result.points);
+      updateUserName(userId); // ไม่ต้อง await
       const remaining = REDEEM_COST - user.points;
 
       if (user.points >= REDEEM_COST) {
@@ -580,7 +511,7 @@ async function handleEvent(event) {
 
   // ===== คำสั่งลูกค้าทั่วไป =====
   if (msg === 'แต้ม' || msg === 'คะแนน' || msg === 'points') {
-    const user = getPoints(userId);
+    const user = await getPoints(userId);
     updateUserName(userId);
     const remaining = REDEEM_COST - user.points;
     if (user.points >= REDEEM_COST) {
@@ -589,15 +520,15 @@ async function handleEvent(event) {
       replyText = '🎯 แต้มสะสม: ' + user.points + ' แต้ม\n🏆 รวมทั้งหมด: ' + user.totalEarned + ' แต้ม\n🎁 แลกไปแล้ว: ' + user.redeemed + ' ครั้ง\n\n📍 อีก ' + remaining + ' แต้มแลกฟรี!';
     }
   } else if (msg === 'แลก' || msg === 'redeem') {
-    var redeemResult = redeemPoints(userId, REDEEM_COST);
+    var redeemResult = await redeemPoints(userId, REDEEM_COST);
     if (redeemResult) {
       replyText = '🎉🎉🎉 แลกสำเร็จ! 🎉🎉🎉\n\n☕ เครื่องดื่มฟรี 1 แก้ว!\n🔑 รหัสยืนยัน: ' + redeemResult.redeemCode + '\n🎯 แต้มคงเหลือ: ' + redeemResult.user.points + ' แต้ม\n\n📌 แสดงรหัสยืนยันให้พนักงาน';
     } else {
-      var user4 = getPoints(userId);
+      var user4 = await getPoints(userId);
       replyText = '❌ แต้มยังไม่ครบ\n\n🎯 แต้มสะสม: ' + user4.points + ' แต้ม\n📍 ต้องสะสมอีก ' + (REDEEM_COST - user4.points) + ' แต้ม';
     }
   } else if (msg === 'เมนู' || msg === 'menu') {
-    replyText = 'เนื่องจากเป็นโปรโมชั่นพิเศษ\n\u2615 เมนูที่แลกได้เฉพาะ Inthanin Coffee มัยลาภเท่านั้น\n\nอเมริกาโน่\nเอสเพรสโซ่\nโกโก้\nชาเขียว\nชาไทย\nชามะนาว\nออลเดย์\nชาดำ\n\n\ud83d\udccd สะสม 1 แต้มต่อ 1 แก้ว!';
+    replyText = 'เนื่องจากเป็นโปรโมชั่นพิเศษ\n☕ เมนูที่แลกได้เฉพาะ Inthanin Coffee มัยลาภเท่านั้น\n\nอเมริกาโน่\nเอสเพรสโซ่\nโกโก้\nชาเขียว\nชาไทย\nชามะนาว\nออลเดย์\nชาดำ\n\n📍 สะสม 1 แต้มต่อ 1 แก้ว!';
   } else if (msg === 'help' || msg === 'ช่วยเหลือ') {
     replyText = '🤖 คำสั่งที่ใช้ได้:\n\n🎫 "สะสม:รหัส" - ใช้รหัสสะสมแต้ม\n🎯 "แต้ม" - เช็คแต้มสะสม\n🎁 "แลก" - แลกเครื่องดื่มฟรี (ครบ ' + REDEEM_COST + ' แต้ม)\n📋 "เมนู" - ดูเมนูเครื่องดื่ม\n❓ "ช่วยเหลือ" - ดูคำสั่งทั้งหมด';
   } else {
