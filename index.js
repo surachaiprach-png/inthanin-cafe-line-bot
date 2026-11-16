@@ -13,6 +13,61 @@ const config = {
 const client = new line.Client(config);
 const app = express();
 
+// ===== Google Sheet FAQ =====
+const SHEET_ID = '1LmmmwpByLKHmGf4bGzcRXFQolqMSo93nQW-1IwClxqg';
+const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/export?format=csv';
+var faqData = [];
+function fetchFAQ() {
+  return new Promise(function(resolve) {
+    https.get(SHEET_CSV_URL, function(res) {
+      var data = '';
+      res.on('data', function(chunk) { data += chunk; });
+      res.on('end', function() {
+        try {
+          var lines = data.split('\n');
+          var newFaq = [];
+          for (var i = 1; i < lines.length; i++) {
+            var line2 = lines[i].trim();
+            if (!line2) continue;
+            var match = line2.match(/^"?([^"]*)"?\s*,\s*"?([\s\S]*?)"?\s*$/);
+            if (match) {
+              newFaq.push({ q: match[1].trim().toLowerCase(), a: match[2].trim() });
+            } else {
+              var parts = line2.split(',');
+              if (parts.length >= 2) {
+                newFaq.push({ q: parts[0].trim().toLowerCase(), a: parts.slice(1).join(',').trim() });
+              }
+            }
+          }
+          faqData = newFaq;
+          console.log('FAQ loaded: ' + faqData.length + ' items');
+        } catch (e) { console.error('Error parsing FAQ:', e); }
+        resolve();
+      });
+    }).on('error', function(e) {
+      console.error('Error fetching FAQ:', e);
+      resolve();
+    });
+  });
+}
+function findFAQAnswer(question) {
+  var q = question.toLowerCase().trim();
+  for (var i = 0; i < faqData.length; i++) {
+    if (faqData[i].q === q) return faqData[i].a;
+  }
+  for (var j = 0; j < faqData.length; j++) {
+    if (q.indexOf(faqData[j].q) !== -1 || faqData[j].q.indexOf(q) !== -1) return faqData[j].a;
+  }
+  for (var k = 0; k < faqData.length; k++) {
+    var keywords = faqData[k].q.split(/\s+/);
+    for (var w = 0; w < keywords.length; w++) {
+      if (keywords[w].length >= 3 && q.indexOf(keywords[w]) !== -1) return faqData[k].a;
+    }
+  }
+  return null;
+}
+fetchFAQ();
+setInterval(fetchFAQ, 5 * 60 * 1000);
 // ===== ตั้งค่า =====
 const DB_FILE = path.join(__dirname, 'points.json');
 const CODES_FILE = path.join(__dirname, 'codes.json');
@@ -467,7 +522,12 @@ async function handleEvent(event) {
   } else if (msg === 'help' || msg === 'ช่วยเหลือ') {
     replyText = '🤖 คำสั่งที่ใช้ได้:\n\n🎫 "สะสม:รหัส" - ใช้รหัสสะสมแต้ม\n🎯 "แต้ม" - เช็คแต้มสะสม\n🎁 "แลก" - แลกเครื่องดื่มฟรี (ครบ ' + REDEEM_COST + ' แต้ม)\n📋 "เมนู" - ดูเมนูเครื่องดื่ม\n❓ "ช่วยเหลือ" - ดูคำสั่งทั้งหมด';
   } else {
-    replyText = 'สวัสดีค่ะ! ยินดีต้อนรับสู่ Inthanin Cafe ☕\n\n🎯 สะสมครบ ' + REDEEM_COST + ' แต้ม แลกเครื่องดื่มฟรี!\n\nพิมพ์ "เมนู" ดูเมนู\nพิมพ์ "แต้ม" เช็คแต้มสะสม\nพิมพ์ "ช่วยเหลือ" ดูคำสั่งทั้งหมด';
+    var faqAnswer = findFAQAnswer(msg);
+    if (faqAnswer) {
+      replyText = faqAnswer;
+    } else {
+      replyText = 'สวัสดีค่ะ! ยินดีต้อนรับสู่ Inthanin Cafe ☕\n\n🎯 สะสมครบ ' + REDEEM_COST + ' แต้ม แลกเครื่องดื่มฟรี!\n\nพิมพ์ "เมนู" ดูเมนู\nพิมพ์ "แต้ม" เช็คแต้มสะสม\nพิมพ์ "ช่วยเหลือ" ดูคำสั่งทั้งหมด';
+    }
   }
 
   return client.replyMessage(event.replyToken, { type: 'text', text: replyText });
