@@ -17,6 +17,35 @@ const app = express();
 const SHEET_ID = '1LmmmwpByLKHmGf4bGzcRXFQolqMSo93nQW-1IwClxqg';
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/export?format=csv';
 var faqData = [];
+
+function parseCSVLine(line) {
+  var result = [];
+  var current = '';
+  var inQuotes = false;
+  for (var i = 0; i < line.length; i++) {
+    if (inQuotes) {
+      if (line[i] === '"' && i+1 < line.length && line[i+1] === '"') {
+        current += '"';
+        i++;
+      } else if (line[i] === '"') {
+        inQuotes = false;
+      } else {
+        current += line[i];
+      }
+    } else {
+      if (line[i] === '"') {
+        inQuotes = true;
+      } else if (line[i] === ',') {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += line[i];
+      }
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
 function parseFAQData(data) {
   try {
     var lines = data.split('\n');
@@ -55,16 +84,11 @@ function fetchFAQ() {
             var lines = data.split('\n');
             var newFaq = [];
             for (var i = 1; i < lines.length; i++) {
-              var line2 = lines[i].trim().replace(/,\s*$/,''); // ตัด trailing comma
+              var line2 = lines[i].trim();
               if (!line2) continue;
-              var match = line2.match(/^"?([^"]*)"?\s*,\s*"?([\s\S]*?)"?\s*$/);
-              if (match) {
-                newFaq.push({ q: match[1].trim().toLowerCase(), a: match[2].trim() });
-              } else {
-                var parts = line2.split(',');
-                if (parts.length >= 2) {
-                  newFaq.push({ q: parts[0].trim().toLowerCase(), a: parts.slice(1).join(',').trim() });
-                }
+              var fields = parseCSVLine(line2);
+              if (fields.length >= 2 && fields[0] && fields[1]) {
+                newFaq.push({ q: fields[0].toLowerCase(), a: fields[1] });
               }
             }
             faqData = newFaq;
