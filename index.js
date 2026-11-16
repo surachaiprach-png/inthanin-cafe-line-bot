@@ -89,33 +89,36 @@ function findFAQAnswer(question) {
   for (var i = 0; i < faqData.length; i++) {
     if (faqData[i].q === q) return faqData[i].a;
   }
-  // 2. คำถามมีคำค้นอยู่ใน FAQ หรือกลับกัน
+  // 2. มีคำค้นอยู่ในอีกฝั่ง
   for (var j = 0; j < faqData.length; j++) {
     if (q.indexOf(faqData[j].q) !== -1 || faqData[j].q.indexOf(q) !== -1) return faqData[j].a;
   }
-  // 3. ตัดคำช่วยออกแล้วเทียบ
-  var stopWords = ['ร้าน','ที่','ไหน','ไหม','มี','ได้','อยู่','คือ','หรือ','นี้','นี่','ไป','มา','ยังไง','อะไร','เท่าไหร่','กี่','บ้าง','หน่อย','ค่ะ','ครับ','คะ','จ้า','จ๊ะ','นะ','เหรอ','รึ','มั้ย','ป่าว','the','is','a'];
-  function removeStopWords(text) {
-    var result = text;
-    for (var s = 0; s < stopWords.length; s++) {
-      result = result.split(stopWords[s]).join('');
+  // 3. Bigram matching (เหมาะกับภาษาไทยที่ไม่มีเว้นวรรค)
+  function getBigrams(text) {
+    var chars = Array.from(text);
+    var bg = [];
+    for (var i = 0; i < chars.length - 1; i++) {
+      bg.push(chars[i] + chars[i+1]);
     }
-    return result.trim();
+    return bg;
   }
-  var cleanQ = removeStopWords(q);
-  if (cleanQ.length >= 2) {
-    for (var k = 0; k < faqData.length; k++) {
-      var cleanFaq = removeStopWords(faqData[k].q);
-      if (cleanFaq.length >= 2 && (cleanQ.indexOf(cleanFaq) !== -1 || cleanFaq.indexOf(cleanQ) !== -1)) return faqData[k].a;
+  var qBigrams = getBigrams(q);
+  var bestScore = 0;
+  var bestIdx = -1;
+  for (var k = 0; k < faqData.length; k++) {
+    var faqBg = getBigrams(faqData[k].q);
+    if (faqBg.length < 2) continue;
+    var matchCount = 0;
+    for (var b = 0; b < faqBg.length; b++) {
+      if (qBigrams.indexOf(faqBg[b]) !== -1) matchCount++;
+    }
+    var score = matchCount / faqBg.length;
+    if (score > bestScore && matchCount >= 2) {
+      bestScore = score;
+      bestIdx = k;
     }
   }
-  // 4. คำสำคัญตรงกัน
-  for (var m = 0; m < faqData.length; m++) {
-    var keywords = faqData[m].q.split(/\s+/);
-    for (var w = 0; w < keywords.length; w++) {
-      if (keywords[w].length >= 2 && stopWords.indexOf(keywords[w]) === -1 && q.indexOf(keywords[w]) !== -1) return faqData[m].a;
-    }
-  }
+  if (bestScore >= 0.4 && bestIdx >= 0) return faqData[bestIdx].a;
   return null;
 }
 fetchFAQ();
