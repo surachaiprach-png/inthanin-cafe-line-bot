@@ -22,7 +22,7 @@ function parseFAQData(data) {
     var lines = data.split('\n');
     var newFaq = [];
     for (var i = 1; i < lines.length; i++) {
-      var line2 = lines[i].trim();
+      var line2 = lines[i].trim().replace(/,\s*$/,'');
       if (!line2) continue;
       var match = line2.match(/^"?([^"]*)"?\s*,\s*"?([\s\S]*?)"?\s*$/);
       if (match) {
