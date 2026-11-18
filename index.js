@@ -20,6 +20,20 @@ var faqData = [];
 // ใส่ URL ของ Apps Script Web App ใน .env หรือ Render Environment
 const SHEET_API_URL = process.env.SHEET_API_URL || '';
 
+// ===== เวลาไทย (UTC+7) =====
+function getBangkokISO() {
+  var now = new Date();
+  var utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  var bkk = new Date(utc + (7 * 3600000));
+  var yyyy = bkk.getFullYear();
+  var mm = String(bkk.getMonth() + 1).padStart(2, '0');
+  var dd = String(bkk.getDate()).padStart(2, '0');
+  var hh = String(bkk.getHours()).padStart(2, '0');
+  var mi = String(bkk.getMinutes()).padStart(2, '0');
+  var ss = String(bkk.getSeconds()).padStart(2, '0');
+  return yyyy + '-' + mm + '-' + dd + 'T' + hh + ':' + mi + ':' + ss;
+}
+
 // ===== ฟังก์ชันเรียก API =====
 function callSheetAPI(body) {
   return new Promise(function(resolve, reject) {
@@ -234,7 +248,7 @@ async function redeemPoints(userId, cost) {
       userId: userId,
       name: user.name || '',
       cost: cost,
-      redeemedAt: new Date().toISOString()
+      redeemedAt: getBangkokISO()
     }});
     return { user: { points: newPoints, totalEarned: user.totalEarned, redeemed: newRedeemed, name: user.name }, redeemCode: redeemCode };
   } catch (e) {
@@ -293,7 +307,7 @@ async function isBillUsed(billNo) {
 
 async function createCode(staffId, pointsAmount, billNo) {
   var code = await generateUniqueCode();
-  var now = new Date().toISOString();
+  var now = getBangkokISO();
   await callSheetAPI({ action: 'setCode', code: code, data: {
     points: pointsAmount,
     billNo: billNo,
@@ -328,7 +342,7 @@ async function useCode(code, userId) {
     await callSheetAPI({ action: 'setCode', code: upperCode, data: {
       used: true,
       usedBy: userId,
-      usedAt: new Date().toISOString()
+      usedAt: getBangkokISO()
     }});
     return { success: true, points: Number(result.points) };
   } catch (e) {
