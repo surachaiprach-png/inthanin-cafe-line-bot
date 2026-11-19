@@ -17,7 +17,6 @@ const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/e
 var faqData = [];
 
 // ===== Google Sheets Database API =====
-// ใส่ URL ของ Apps Script Web App ใน .env หรือ Render Environment
 const SHEET_API_URL = process.env.SHEET_API_URL || '';
 
 // ===== เวลาไทย (UTC+7) =====
@@ -42,18 +41,6 @@ function callSheetAPI(body) {
       return;
     }
     var postData = JSON.stringify(body);
-    var urlObj = new URL(SHEET_API_URL);
-
-    var options = {
-      hostname: urlObj.hostname,
-      port: 443,
-      path: urlObj.pathname,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(postData)
-      }
-    };
 
     function doRequest(reqUrl) {
       var u = new URL(reqUrl);
@@ -68,9 +55,7 @@ function callSheetAPI(body) {
         }
       };
       var req = https.request(opts, function(res) {
-        // Google Apps Script returns 302 redirect after POST
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          // Follow redirect with GET
           https.get(res.headers.location, function(res2) {
             var data = '';
             res2.on('data', function(chunk) { data += chunk; });
@@ -156,15 +141,12 @@ function fetchFAQ() {
 
 function findFAQAnswer(question) {
   var q = question.toLowerCase().trim();
-  // 1. ตรงเป๊ะ
   for (var i = 0; i < faqData.length; i++) {
     if (faqData[i].q === q) return faqData[i].a;
   }
-  // 2. Substring match
   for (var j = 0; j < faqData.length; j++) {
     if (q.indexOf(faqData[j].q) !== -1 || faqData[j].q.indexOf(q) !== -1) return faqData[j].a;
   }
-  // 3. Bigram matching (สำหรับภาษาไทย)
   function getBigrams(text) {
     var chars = Array.from(text);
     var bg = [];
@@ -195,31 +177,58 @@ setInterval(fetchFAQ, 5 * 60 * 1000);
 // ===== ตั้งค่า =====
 const ADMIN_PIN = process.env.ADMIN_PIN || '1234';
 const CODE_EXPIRE_MINUTES = 1440; // 24 ชั่วโมง
-const REDEEM_COST = 15;
+const REDEEM_COST_WALKIN = 10;  // หน้าร้าน 10 แต้ม
+const REDEEM_COST_ONLINE = 15;  // ออนไลน์ 15 แต้ม
 
-// ===== ระบบเก็บแต้ม (Google Sheets) =====
+// ===== ระบบเก็บแต้ม V2 (แยก walkin/online) =====
 async function getPoints(userId) {
   try {
     var result = await callSheetAPI({ action: 'getCustomer', userId: userId });
     if (!result.found) {
-      // สร้างลูกค้าใหม่
-      await callSheetAPI({ action: 'setCustomer', userId: userId, data: { points: 0, totalEarned: 0, redeemed: 0, name: '' } });
-      return { points: 0, totalEarned: 0, redeemed: 0, name: '' };
+      await callSheetAPI({ action: 'setCustomer', userId: userId, data: {
+        pointsWalkin: 0, pointsOnline: 0,
+        totalWalkin: 0, totalOnline: 0,
+        redeemedWalkin: 0, redeemedOnline: 0,
+        name: ''
+      }});
+      return { pointsWalkin: 0, pointsOnline: 0, totalWalkin: 0, totalOnline: 0, redeemedWalkin: 0, redeemedOnline: 0, name: '' };
     }
-    return { points: Number(result.points), totalEarned: Number(result.totalEarned), redeemed: Number(result.redeemed), name: result.name || '' };
+    return {
+      pointsWalkin: Number(result.pointsWalkin) || 0,
+      pointsOnline: Number(result.pointsOnline) || 0,
+      totalWalkin: Number(result.totalWalkin) || 0,
+      totalOnline: Number(result.totalOnline) || 0,
+      redeemedWalkin: Number(result.redeemedWalkin) || 0,
+      redeemedOnline: Number(result.redeemedOnline) || 0,
+      name: result.name || ''
+    };
   } catch (e) {
     console.error('Error getPoints:', e);
-    return { points: 0, totalEarned: 0, redeemed: 0, name: '' };
+    return { pointsWalkin: 0, pointsOnline: 0, totalWalkin: 0, totalOnline: 0, redeemedWalkin: 0, redeemedOnline: 0, name: '' };
   }
 }
 
-async function addPoints(userId, count) {
+async function addPoints(userId, count, channel) {
   try {
     var user = await getPoints(userId);
-    var newPoints = user.points + count;
-    var newTotal = user.totalEarned + count;
-    await callSheetAPI({ action: 'setCustomer', userId: userId, data: { points: newPoints, totalEarned: newTotal } });
-    return { points: newPoints, totalEarned: newTotal, redeemed: user.redeemed, name: user.name };
+    var updateData = {};
+    if (channel === 'online') {
+      updateData.pointsOnline = user.pointsOnline + count;
+      updateData.totalOnline = user.totalOnline + count;
+    } else {
+      updateData.pointsWalkin = user.pointsWalkin + count;
+      updateData.totalWalkin = user.totalWalkin + count;
+    }
+    await callSheetAPI({ action: 'setCustomer', userId: userId, data: updateData });
+    // คืนค่าอัปเดตแล้ว
+    if (channel === 'online') {
+      user.pointsOnline += count;
+      user.totalOnline += count;
+    } else {
+      user.pointsWalkin += count;
+      user.totalWalkin += count;
+    }
+    return user;
   } catch (e) {
     console.error('Error addPoints:', e);
     return null;
@@ -233,14 +242,23 @@ async function updateUserName(userId) {
   } catch (e) { console.error('Error getting profile:', e); }
 }
 
-async function redeemPoints(userId, cost) {
+async function redeemPoints(userId, channel) {
   try {
     var user = await getPoints(userId);
-    if (user.points < cost) return null;
+    var cost = channel === 'online' ? REDEEM_COST_ONLINE : REDEEM_COST_WALKIN;
+    var currentPoints = channel === 'online' ? user.pointsOnline : user.pointsWalkin;
 
-    var newPoints = user.points - cost;
-    var newRedeemed = user.redeemed + 1;
-    await callSheetAPI({ action: 'setCustomer', userId: userId, data: { points: newPoints, redeemed: newRedeemed } });
+    if (currentPoints < cost) return null;
+
+    var updateData = {};
+    if (channel === 'online') {
+      updateData.pointsOnline = user.pointsOnline - cost;
+      updateData.redeemedOnline = user.redeemedOnline + 1;
+    } else {
+      updateData.pointsWalkin = user.pointsWalkin - cost;
+      updateData.redeemedWalkin = user.redeemedWalkin + 1;
+    }
+    await callSheetAPI({ action: 'setCustomer', userId: userId, data: updateData });
 
     var redeemCode = await generateUniqueRedeemCode();
     await callSheetAPI({ action: 'addRedeem', data: {
@@ -248,9 +266,19 @@ async function redeemPoints(userId, cost) {
       userId: userId,
       name: user.name || '',
       cost: cost,
-      redeemedAt: getBangkokISO()
+      redeemedAt: getBangkokISO(),
+      channel: channel
     }});
-    return { user: { points: newPoints, totalEarned: user.totalEarned, redeemed: newRedeemed, name: user.name }, redeemCode: redeemCode };
+
+    // คืนค่าอัปเดตแล้ว
+    if (channel === 'online') {
+      user.pointsOnline -= cost;
+      user.redeemedOnline += 1;
+    } else {
+      user.pointsWalkin -= cost;
+      user.redeemedWalkin += 1;
+    }
+    return { user: user, redeemCode: redeemCode, channel: channel };
   } catch (e) {
     console.error('Error redeemPoints:', e);
     return null;
@@ -284,7 +312,7 @@ async function generateUniqueCode() {
     var result = await callSheetAPI({ action: 'codeExists', code: code });
     if (!result.exists) return code;
   }
-  return code; // fallback
+  return code;
 }
 
 async function generateUniqueRedeemCode() {
@@ -305,7 +333,7 @@ async function isBillUsed(billNo) {
   } catch (e) { return false; }
 }
 
-async function createCode(staffId, pointsAmount, billNo) {
+async function createCode(staffId, pointsAmount, billNo, channel) {
   var code = await generateUniqueCode();
   var now = getBangkokISO();
   await callSheetAPI({ action: 'setCode', code: code, data: {
@@ -313,13 +341,15 @@ async function createCode(staffId, pointsAmount, billNo) {
     billNo: billNo,
     createdBy: staffId,
     createdAt: now,
-    used: false
+    used: false,
+    channel: channel
   }});
   await callSheetAPI({ action: 'setBill', billNo: billNo, data: {
     code: code,
     points: pointsAmount,
     createdBy: staffId,
-    createdAt: now
+    createdAt: now,
+    channel: channel
   }});
   return code;
 }
@@ -344,7 +374,8 @@ async function useCode(code, userId) {
       usedBy: userId,
       usedAt: getBangkokISO()
     }});
-    return { success: true, points: Number(result.points) };
+    var channel = String(result.channel || 'walkin');
+    return { success: true, points: Number(result.points), channel: channel };
   } catch (e) {
     console.error('Error useCode:', e);
     return { error: 'system_error' };
@@ -375,12 +406,15 @@ async function handleEvent(event) {
 
   let replyText;
 
-  // ===== คำสั่งพนักงาน: สร้าง:1234:00003:3 =====
-  const createMatch = msg.match(/^สร้าง[:\s](\d{4})[:\s]([A-Za-z0-9\/]+)[:\s](\d+)$/);
+  // ===== คำสั่งพนักงาน: สร้าง:1234:00003:3 หรือ สร้าง:1234:00003:3:ร หรือ สร้าง:1234:00003:3:อ =====
+  const createMatch = msg.match(/^สร้าง[:\s](\d{4})[:\s]([A-Za-z0-9\/]+)[:\s](\d+)(?:[:\s]([รอ]))?$/);
   if (createMatch) {
     const pin = createMatch[1];
     const billNo = createMatch[2];
     const count = parseInt(createMatch[3]);
+    const chFlag = createMatch[4] || 'ร'; // ค่าเริ่มต้น = หน้าร้าน
+    const channel = chFlag === 'อ' ? 'online' : 'walkin';
+    const channelLabel = channel === 'online' ? '🛒 ออนไลน์' : '🏪 หน้าร้าน';
 
     if (pin !== ADMIN_PIN) {
       replyText = '❌ รหัสไม่ถูกต้อง';
@@ -389,8 +423,8 @@ async function handleEvent(event) {
     } else if (await isBillUsed(billNo)) {
       replyText = '❌ บิลเลขที่ ' + billNo + ' ถูกใช้ไปแล้ว!';
     } else {
-      const code = await createCode(userId, count, billNo);
-      replyText = '✅ สร้างรหัสสำเร็จ!\n\n🎫 รหัส: ' + code + '\n🧾 บิล: ' + billNo + '\n☕ จำนวน: ' + count + ' แต้ม\n⏰ หมดอายุใน 24 ชั่วโมง\n\nบอกรหัสนี้ให้ลูกค้า';
+      const code = await createCode(userId, count, billNo, channel);
+      replyText = '✅ สร้างรหัสสำเร็จ!\n\n🎫 รหัส: ' + code + '\n🧾 บิล: ' + billNo + '\n☕ จำนวน: ' + count + ' แต้ม\n' + channelLabel + '\n⏰ หมดอายุใน 24 ชั่วโมง\n\nบอกรหัสนี้ให้ลูกค้า';
     }
     return client.replyMessage(event.replyToken, { type: 'text', text: replyText });
   }
@@ -409,15 +443,19 @@ async function handleEvent(event) {
           replyText = '📊 ยังไม่มีลูกค้าในระบบ';
         } else {
           let summary = '📊 สรุปแต้มลูกค้า (' + users.length + ' คน)\n\n';
-          let totalPoints = 0;
+          let totalW = 0, totalO = 0;
           for (var i = 0; i < users.length && i < 20; i++) {
             var u = users[i];
-            totalPoints += Number(u.points);
+            var pw = Number(u.pointsWalkin) || 0;
+            var po = Number(u.pointsOnline) || 0;
+            totalW += pw;
+            totalO += po;
             var name = u.name || 'ไม่ทราบชื่อ';
-            summary += (i + 1) + '. ' + name + '\n   แต้ม: ' + u.points + ' | รวมสะสม: ' + u.totalEarned + ' | แลกแล้ว: ' + u.redeemed + ' ครั้ง\n';
+            summary += (i + 1) + '. ' + name + '\n   🏪 ' + pw + ' | 🛒 ' + po + ' | แลก: ' + ((Number(u.redeemedWalkin) || 0) + (Number(u.redeemedOnline) || 0)) + ' ครั้ง\n';
           }
           if (users.length > 20) summary += '...(แสดง 20 คนแรก)\n';
-          summary += '\n🏆 แต้มรวมทั้งระบบ: ' + totalPoints;
+          summary += '\n🏪 แต้มหน้าร้านรวม: ' + totalW;
+          summary += '\n🛒 แต้มออนไลน์รวม: ' + totalO;
           replyText = summary;
         }
       } catch (e) {
@@ -446,10 +484,15 @@ async function handleEvent(event) {
         text += '📅 วันที่: ' + s.date + '\n';
         text += '━━━━━━━━━━━━━━━\n';
         text += '🧾 จำนวนบิล: ' + s.billCount + ' บิล\n';
+        if (s.billCountWalkin > 0 || s.billCountOnline > 0) {
+          text += '   🏪 หน้าร้าน: ' + (s.billCountWalkin || 0) + ' บิล (' + (s.totalPointsWalkin || 0) + ' แต้ม)\n';
+          text += '   🛒 ออนไลน์: ' + (s.billCountOnline || 0) + ' บิล (' + (s.totalPointsOnline || 0) + ' แต้ม)\n';
+        }
         if (s.bills && s.bills.length > 0) {
-          text += '📝 เลขที่บิล:\n';
+          text += '📝 รายละเอียดบิล:\n';
           for (var b = 0; b < s.bills.length; b++) {
-            text += '   ' + (b + 1) + '. ' + s.bills[b].billNo + ' (' + s.bills[b].points + ' แต้ม)\n';
+            var chIcon = s.bills[b].channel === 'online' ? '🛒' : '🏪';
+            text += '   ' + (b + 1) + '. ' + s.bills[b].billNo + ' (' + s.bills[b].points + ' แต้ม) ' + chIcon + '\n';
           }
         }
         text += '━━━━━━━━━━━━━━━\n';
@@ -458,6 +501,10 @@ async function handleEvent(event) {
         text += '⏳ รหัสยังไม่ได้ใช้: ' + s.unusedCodes + ' รหัส\n';
         text += '━━━━━━━━━━━━━━━\n';
         text += '🎁 จำนวนแลกฟรี: ' + s.redeemCount + ' ครั้ง\n';
+        if ((s.redeemCountWalkin || 0) > 0 || (s.redeemCountOnline || 0) > 0) {
+          text += '   🏪 หน้าร้าน: ' + (s.redeemCountWalkin || 0) + ' ครั้ง\n';
+          text += '   🛒 ออนไลน์: ' + (s.redeemCountOnline || 0) + ' ครั้ง\n';
+        }
         if (s.redeemNames && s.redeemNames.length > 0) {
           text += '👤 ผู้แลก: ' + s.redeemNames.join(', ') + '\n';
         }
@@ -485,9 +532,11 @@ async function handleEvent(event) {
       if (vResult.error === 'not_found') {
         replyText = '❌ ไม่พบรหัสแลก ' + rCode + '\n\n⚠️ อาจเป็นรหัสปลอม!';
       } else if (vResult.error === 'already_confirmed') {
-        replyText = '⚠️ รหัส ' + rCode + ' ถูกยืนยันไปแล้ว!\n\n👤 ชื่อ: ' + (vResult.redeem.name || 'ไม่ทราบ') + '\n\n❌ ไม่สามารถใช้ซ้ำได้';
+        var chLabel2 = String(vResult.redeem.channel || 'walkin') === 'online' ? '🛒 ออนไลน์' : '🏪 หน้าร้าน';
+        replyText = '⚠️ รหัส ' + rCode + ' ถูกยืนยันไปแล้ว!\n\n👤 ชื่อ: ' + (vResult.redeem.name || 'ไม่ทราบ') + '\n' + chLabel2 + '\n\n❌ ไม่สามารถใช้ซ้ำได้';
       } else if (vResult.success) {
-        replyText = '✅ ยืนยันสำเร็จ! รหัส ' + rCode + '\n\n👤 ชื่อลูกค้า: ' + (vResult.redeem.name || 'ไม่ทราบ') + '\n\n☕ ให้เครื่องดื่มฟรี 1 แก้วได้เลย!';
+        var chLabel3 = String(vResult.redeem.channel || 'walkin') === 'online' ? '🛒 ออนไลน์' : '🏪 หน้าร้าน';
+        replyText = '✅ ยืนยันสำเร็จ! รหัส ' + rCode + '\n\n👤 ชื่อลูกค้า: ' + (vResult.redeem.name || 'ไม่ทราบ') + '\n' + chLabel3 + '\n\n☕ ให้เครื่องดื่มฟรี 1 แก้วได้เลย!';
       } else {
         replyText = '❌ เกิดข้อผิดพลาด กรุณาลองใหม่';
       }
@@ -510,53 +559,99 @@ async function handleEvent(event) {
     } else if (result.error) {
       replyText = '❌ เกิดข้อผิดพลาด กรุณาลองใหม่';
     } else {
-      const user = await addPoints(userId, result.points);
+      var ch = result.channel || 'walkin';
+      const user = await addPoints(userId, result.points, ch);
       updateUserName(userId); // ไม่ต้อง await
-      const remaining = REDEEM_COST - user.points;
 
-      if (user.points >= REDEEM_COST) {
-        replyText = '✅ สะสม ' + result.points + ' แต้ม สำเร็จ!\n\n🎯 แต้มสะสม: ' + user.points + ' แต้ม\n🎉 แลกเครื่องดื่มฟรีได้!\n\nพิมพ์ "แลก" เพื่อใช้สิทธิ์';
+      var chLabel = ch === 'online' ? '🛒 ออนไลน์' : '🏪 หน้าร้าน';
+      var currentPts = ch === 'online' ? user.pointsOnline : user.pointsWalkin;
+      var redeemCost = ch === 'online' ? REDEEM_COST_ONLINE : REDEEM_COST_WALKIN;
+      var remaining = redeemCost - currentPts;
+
+      if (currentPts >= redeemCost) {
+        replyText = '✅ สะสม ' + result.points + ' แต้ม สำเร็จ! ' + chLabel + '\n\n🎯 แต้ม' + (ch === 'online' ? 'ออนไลน์' : 'หน้าร้าน') + ': ' + currentPts + ' แต้ม\n🎉 แลกเครื่องดื่มฟรีได้!\n\nพิมพ์ "' + (ch === 'online' ? 'แลกอ' : 'แลก') + '" เพื่อใช้สิทธิ์';
       } else {
-        replyText = '✅ สะสม ' + result.points + ' แต้ม สำเร็จ!\n\n🎯 แต้มสะสม: ' + user.points + ' แต้ม\n📍 อีก ' + remaining + ' แต้มแลกเครื่องดื่มฟรี!';
+        replyText = '✅ สะสม ' + result.points + ' แต้ม สำเร็จ! ' + chLabel + '\n\n🎯 แต้ม' + (ch === 'online' ? 'ออนไลน์' : 'หน้าร้าน') + ': ' + currentPts + ' แต้ม\n📍 อีก ' + remaining + ' แต้มแลกเครื่องดื่มฟรี!';
       }
     }
     return client.replyMessage(event.replyToken, { type: 'text', text: replyText });
   }
 
-  // ===== คำสั่งลูกค้าทั่วไป =====
+  // ===== คำสั่งลูกค้า: แต้ม =====
   if (msg === 'แต้ม' || msg === 'คะแนน' || msg === 'points') {
     const user = await getPoints(userId);
     updateUserName(userId);
-    const remaining = REDEEM_COST - user.points;
-    if (user.points >= REDEEM_COST) {
-      replyText = '🎯 แต้มสะสม: ' + user.points + ' แต้ม\n🏆 รวมทั้งหมด: ' + user.totalEarned + ' แต้ม\n🎁 แลกไปแล้ว: ' + user.redeemed + ' ครั้ง\n\n🎉 พิมพ์ "แลก" เพื่อใช้สิทธิ์!';
+    var remainW = REDEEM_COST_WALKIN - user.pointsWalkin;
+    var remainO = REDEEM_COST_ONLINE - user.pointsOnline;
+    var totalRedeemed = user.redeemedWalkin + user.redeemedOnline;
+
+    replyText = '🎯 แต้มสะสมของคุณ\n\n';
+    // หน้าร้าน
+    replyText += '🏪 หน้าร้าน: ' + user.pointsWalkin + ' แต้ม';
+    if (user.pointsWalkin >= REDEEM_COST_WALKIN) {
+      replyText += ' 🎉 แลกได้!';
     } else {
-      replyText = '🎯 แต้มสะสม: ' + user.points + ' แต้ม\n🏆 รวมทั้งหมด: ' + user.totalEarned + ' แต้ม\n🎁 แลกไปแล้ว: ' + user.redeemed + ' ครั้ง\n\n📍 อีก ' + remaining + ' แต้มแลกฟรี!';
+      replyText += ' (อีก ' + remainW + ' แลกฟรี)';
     }
-  } else if (msg === 'แลก' || msg === 'redeem') {
-    var redeemResult = await redeemPoints(userId, REDEEM_COST);
+    replyText += '\n';
+    // ออนไลน์
+    replyText += '🛒 ออนไลน์: ' + user.pointsOnline + ' แต้ม';
+    if (user.pointsOnline >= REDEEM_COST_ONLINE) {
+      replyText += ' 🎉 แลกได้!';
+    } else {
+      replyText += ' (อีก ' + remainO + ' แลกฟรี)';
+    }
+    replyText += '\n\n';
+    replyText += '🏆 รวมสะสม: ' + (user.totalWalkin + user.totalOnline) + ' แต้ม\n';
+    replyText += '🎁 แลกไปแล้ว: ' + totalRedeemed + ' ครั้ง';
+
+    if (user.pointsWalkin >= REDEEM_COST_WALKIN || user.pointsOnline >= REDEEM_COST_ONLINE) {
+      replyText += '\n\n';
+      if (user.pointsWalkin >= REDEEM_COST_WALKIN) replyText += '👉 พิมพ์ "แลก" ใช้สิทธิ์หน้าร้าน\n';
+      if (user.pointsOnline >= REDEEM_COST_ONLINE) replyText += '👉 พิมพ์ "แลกอ" ใช้สิทธิ์ออนไลน์';
+    }
+  }
+  // ===== คำสั่งลูกค้า: แลก / แลกร / แลกอ =====
+  else if (msg === 'แลก' || msg === 'แลกร' || msg === 'redeem') {
+    // แลกแต้มหน้าร้าน
+    var redeemResult = await redeemPoints(userId, 'walkin');
     if (redeemResult) {
-      replyText = '🎉🎉🎉 แลกสำเร็จ! 🎉🎉🎉\n\n☕ เครื่องดื่มฟรี 1 แก้ว!\n🔑 รหัสยืนยัน: ' + redeemResult.redeemCode + '\n🎯 แต้มคงเหลือ: ' + redeemResult.user.points + ' แต้ม\n\n📌 แสดงรหัสยืนยันให้พนักงาน';
+      replyText = '🎉🎉🎉 แลกสำเร็จ! 🎉🎉🎉\n\n🏪 ช่องทาง: หน้าร้าน\n☕ เครื่องดื่มฟรี 1 แก้ว!\n🔑 รหัสยืนยัน: ' + redeemResult.redeemCode + '\n🎯 แต้มหน้าร้านคงเหลือ: ' + redeemResult.user.pointsWalkin + ' แต้ม\n\n📌 แสดงรหัสยืนยันให้พนักงาน';
     } else {
       var user4 = await getPoints(userId);
-      replyText = '❌ แต้มยังไม่ครบ\n\n🎯 แต้มสะสม: ' + user4.points + ' แต้ม\n📍 ต้องสะสมอีก ' + (REDEEM_COST - user4.points) + ' แต้ม';
+      replyText = '❌ แต้มหน้าร้านยังไม่ครบ\n\n🏪 แต้มหน้าร้าน: ' + user4.pointsWalkin + ' แต้ม\n📍 ต้องสะสมอีก ' + (REDEEM_COST_WALKIN - user4.pointsWalkin) + ' แต้ม (ครบ ' + REDEEM_COST_WALKIN + ' แลกฟรี)';
     }
-  } else if (msg === 'เมนู' || msg === 'menu') {
-    replyText = 'เนื่องจากเป็นโปรโมชั่นพิเศษ\n☕ เมนูที่แลกได้เฉพาะ Inthanin Coffee มัยลาภเท่านั้น\n\nอเมริกาโน่\nเอสเพรสโซ่\nโกโก้\nชาเขียว\nชาไทย\nชามะนาว\nออลเดย์\nชาดำ\n\n📍 สะสม 1 แต้มต่อ 1 แก้ว!';
-  } else if (msg === 'help' || msg === 'ช่วยเหลือ') {
-    replyText = '🤖 คำสั่งที่ใช้ได้:\n\n🎫 "สะสม:รหัส" - ใช้รหัสสะสมแต้ม\n🎯 "แต้ม" - เช็คแต้มสะสม\n🎁 "แลก" - แลกเครื่องดื่มฟรี (ครบ ' + REDEEM_COST + ' แต้ม)\n📋 "เมนู" - ดูเมนูเครื่องดื่ม\n❓ "ช่วยเหลือ" - ดูคำสั่งทั้งหมด';
-  } else {
+  } else if (msg === 'แลกอ') {
+    // แลกแต้มออนไลน์
+    var redeemResult2 = await redeemPoints(userId, 'online');
+    if (redeemResult2) {
+      replyText = '🎉🎉🎉 แลกสำเร็จ! 🎉🎉🎉\n\n🛒 ช่องทาง: ออนไลน์\n☕ เครื่องดื่มฟรี 1 แก้ว!\n🔑 รหัสยืนยัน: ' + redeemResult2.redeemCode + '\n🎯 แต้มออนไลน์คงเหลือ: ' + redeemResult2.user.pointsOnline + ' แต้ม\n\n📌 แสดงรหัสยืนยันให้พนักงาน';
+    } else {
+      var user5 = await getPoints(userId);
+      replyText = '❌ แต้มออนไลน์ยังไม่ครบ\n\n🛒 แต้มออนไลน์: ' + user5.pointsOnline + ' แต้ม\n📍 ต้องสะสมอีก ' + (REDEEM_COST_ONLINE - user5.pointsOnline) + ' แต้ม (ครบ ' + REDEEM_COST_ONLINE + ' แลกฟรี)';
+    }
+  }
+  // ===== เมนู =====
+  else if (msg === 'เมนู' || msg === 'menu') {
+    replyText = 'เนื่องจากเป็นโปรโมชั่นพิเศษ\n☕ เมนูที่แลกได้เฉพาะ Inthanin Coffee มัยลาภเท่านั้น\n\nอเมริกาโน่\nเอสเพรสโซ่\nโกโก้\nชาเขียว\nชาไทย\nชามะนาว\nออลเดย์\nชาดำ\n\n🏪 หน้าร้าน: สะสมครบ ' + REDEEM_COST_WALKIN + ' แต้ม แลกฟรี!\n🛒 ออนไลน์: สะสมครบ ' + REDEEM_COST_ONLINE + ' แต้ม แลกฟรี!';
+  }
+  // ===== ช่วยเหลือ =====
+  else if (msg === 'help' || msg === 'ช่วยเหลือ') {
+    replyText = '🤖 คำสั่งลูกค้า:\n\n🎫 "สะสม:รหัส" - ใช้รหัสสะสมแต้ม\n🎯 "แต้ม" - เช็คแต้มสะสม\n🎁 "แลก" - แลกแต้มหน้าร้าน (' + REDEEM_COST_WALKIN + ' แต้ม)\n🎁 "แลกอ" - แลกแต้มออนไลน์ (' + REDEEM_COST_ONLINE + ' แต้ม)\n📋 "เมนู" - ดูเมนูเครื่องดื่ม\n❓ "ช่วยเหลือ" - ดูคำสั่งทั้งหมด';
+  }
+  // ===== FAQ / ข้อความทั่วไป =====
+  else {
     var faqAnswer = findFAQAnswer(msg);
     if (faqAnswer) {
       replyText = faqAnswer;
     } else {
-      replyText = 'สวัสดีค่ะ! ยินดีต้อนรับสู่ Inthanin Cafe ☕\n\n🎯 สะสมครบ ' + REDEEM_COST + ' แต้ม แลกเครื่องดื่มฟรี!\n\nพิมพ์ "เมนู" ดูเมนู\nพิมพ์ "แต้ม" เช็คแต้มสะสม\nพิมพ์ "ช่วยเหลือ" ดูคำสั่งทั้งหมด';
+      replyText = 'สวัสดีค่ะ! ยินดีต้อนรับสู่ Inthanin Cafe ☕\n\n🏪 หน้าร้าน: สะสมครบ ' + REDEEM_COST_WALKIN + ' แต้ม แลกฟรี!\n🛒 ออนไลน์: สะสมครบ ' + REDEEM_COST_ONLINE + ' แต้ม แลกฟรี!\n\nพิมพ์ "เมนู" ดูเมนู\nพิมพ์ "แต้ม" เช็คแต้มสะสม\nพิมพ์ "ช่วยเหลือ" ดูคำสั่งทั้งหมด';
     }
   }
 
   return client.replyMessage(event.replyToken, { type: 'text', text: replyText });
 }
 
-app.get('/', (req, res) => { res.send('Inthanin Cafe LINE Bot is running!'); });
+app.get('/', (req, res) => { res.send('Inthanin Cafe LINE Bot V2 is running!'); });
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => { console.log('Bot running on port ' + PORT); });
+app.listen(PORT, () => { console.log('Bot V2 running on port ' + PORT); });
