@@ -19,7 +19,7 @@ var faqData = [];
 // ===== Google Sheets Database API =====
 const SHEET_API_URL = process.env.SHEET_API_URL || '';
 
-// ===== เวลาไทย (UTC+7) =====
+// ===== à¹à¸§à¸¥à¸²à¹à¸à¸¢ (UTC+7) =====
 function getBangkokISO() {
   var now = new Date();
   var utc = now.getTime() + (now.getTimezoneOffset() * 60000);
@@ -33,7 +33,7 @@ function getBangkokISO() {
   return yyyy + '-' + mm + '-' + dd + 'T' + hh + ':' + mi + ':' + ss;
 }
 
-// ===== ฟังก์ชันเรียก API =====
+// ===== à¸à¸±à¸à¸à¹à¸à¸±à¸à¹à¸£à¸µà¸¢à¸ API =====
 function callSheetAPI(body) {
   return new Promise(function(resolve, reject) {
     if (!SHEET_API_URL) {
@@ -170,17 +170,17 @@ function findFAQAnswer(question) {
   return null;
 }
 
-// โหลด FAQ ทุก 5 นาที
+// à¹à¸«à¸¥à¸ FAQ à¸à¸¸à¸ 5 à¸à¸²à¸à¸µ
 fetchFAQ();
 setInterval(fetchFAQ, 5 * 60 * 1000);
 
-// ===== ตั้งค่า =====
+// ===== à¸à¸±à¹à¸à¸à¹à¸² =====
 const ADMIN_PIN = process.env.ADMIN_PIN || '1234';
-const CODE_EXPIRE_MINUTES = 1440; // 24 ชั่วโมง
-const REDEEM_COST_WALKIN = 10;  // หน้าร้าน 10 แต้ม
-const REDEEM_COST_ONLINE = 15;  // ออนไลน์ 15 แต้ม
+const CODE_EXPIRE_MINUTES = 1440; // 24 à¸à¸±à¹à¸§à¹à¸¡à¸
+const REDEEM_COST_WALKIN = 10;  // à¸«à¸à¹à¸²à¸£à¹à¸²à¸ 10 à¹à¸à¹à¸¡
+const REDEEM_COST_ONLINE = 15;  // à¸­à¸­à¸à¹à¸¥à¸à¹ 15 à¹à¸à¹à¸¡
 
-// ===== ระบบเก็บแต้ม V2 (แยก walkin/online) =====
+// ===== à¸£à¸°à¸à¸à¹à¸à¹à¸à¹à¸à¹à¸¡ V2 (à¹à¸¢à¸ walkin/online) =====
 async function getPoints(userId) {
   try {
     var result = await callSheetAPI({ action: 'getCustomer', userId: userId });
@@ -220,7 +220,7 @@ async function addPoints(userId, count, channel) {
       updateData.totalWalkin = user.totalWalkin + count;
     }
     await callSheetAPI({ action: 'setCustomer', userId: userId, data: updateData });
-    // คืนค่าอัปเดตแล้ว
+    // à¸à¸·à¸à¸à¹à¸²à¸­à¸±à¸à¹à¸à¸à¹à¸¥à¹à¸§
     if (channel === 'online') {
       user.pointsOnline += count;
       user.totalOnline += count;
@@ -270,7 +270,7 @@ async function redeemPoints(userId, channel) {
       channel: channel
     }});
 
-    // คืนค่าอัปเดตแล้ว
+    // à¸à¸·à¸à¸à¹à¸²à¸­à¸±à¸à¹à¸à¸à¹à¸¥à¹à¸§
     if (channel === 'online') {
       user.pointsOnline -= cost;
       user.redeemedOnline += 1;
@@ -285,7 +285,7 @@ async function redeemPoints(userId, channel) {
   }
 }
 
-// ===== ระบบรหัส =====
+// ===== à¸£à¸°à¸à¸à¸£à¸«à¸±à¸ª =====
 function generateCodeStr() {
   var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   var code = '';
@@ -362,13 +362,13 @@ async function useCode(code, userId) {
     if (!result.found) return { error: 'not_found' };
     if (result.used === true || result.used === 'TRUE' || result.used === 'true') return { error: 'already_used' };
 
-    // เช็คหมดอายุ
+    // à¹à¸à¹à¸à¸«à¸¡à¸à¸­à¸²à¸¢à¸¸
     var created = new Date(result.createdAt);
     var now = new Date();
     var diffMinutes = (now - created) / (1000 * 60);
     if (diffMinutes > CODE_EXPIRE_MINUTES) return { error: 'expired' };
 
-    // ใช้รหัสสำเร็จ
+    // à¹à¸à¹à¸£à¸«à¸±à¸ªà¸ªà¸³à¹à¸£à¹à¸
     await callSheetAPI({ action: 'setCode', code: upperCode, data: {
       used: true,
       usedBy: userId,
@@ -400,13 +400,13 @@ app.post('/webhook', line.middleware(config), (req, res) => {
 });
 
 async function handleEvent(event) {
-  // ===== Follow Event: ลูกค้าเพิ่มเพื่อน =====
+  // ===== Follow Event: à¸¥à¸¹à¸à¸à¹à¸²à¹à¸à¸´à¹à¸¡à¹à¸à¸·à¹à¸­à¸ =====
   if (event.type === 'follow') {
     const userId = event.source.userId;
     try {
       var profile = await client.getProfile(userId);
       var customerName = profile.displayName || '';
-      // บันทึกลูกค้าใหม่ลง Google Sheet (ถ้ายังไม่มี)
+      // à¸à¸±à¸à¸à¸¶à¸à¸¥à¸¹à¸à¸à¹à¸²à¹à¸«à¸¡à¹à¸¥à¸ Google Sheet (à¸à¹à¸²à¸¢à¸±à¸à¹à¸¡à¹à¸¡à¸µ)
       var existing = await getPoints(userId);
       if (!existing || (!existing.pointsWalkin && !existing.pointsOnline && !existing.totalWalkin && !existing.totalOnline)) {
         await callSheetAPI({
@@ -429,8 +429,48 @@ async function handleEvent(event) {
     }
     return client.replyMessage(event.replyToken, {
       type: 'text',
-      text: 'สวัสดีค่ะ! ยินดีต้อนรับสู่ Inthanin Cafe ☕\n\n🏪 หน้าร้าน: สะสมครบ 10 แต้ม แลกฟรี!\n🛒 ออนไลน์: สะสมครบ 15 แต้ม แลกฟรี!\n\nพิมพ์ "เมนู" ดูเมนู\nพิมพ์ "แต้ม" เช็คแต้มสะสม\nพิมพ์ "ช่วยเหลือ" ดูคำสั่งทั้งหมด'
+      text: 'à¸ªà¸§à¸±à¸ªà¸à¸µà¸à¹à¸ ! à¸¢à¸´à¸à¸à¸µà¸à¹à¸­à¸à¸£à¸±à¸à¸ªà¸¹à¹ Inthanin Cafe â\n\nðª à¸«à¸à¹à¸²à¸£à¹à¸²à¸: à¸ªà¸°à¸ªà¸¡à¸à¸£à¸ 10 à¹à¸à¹à¸¡ à¹à¸¥à¸à¸à¸£à¸µ!\nð à¸­à¸­à¸à¹à¸¥à¸à¹: à¸ªà¸°à¸ªà¸¡à¸à¸£à¸ 15 à¹à¸à¹à¸¡ à¹à¸¥à¸à¸à¸£à¸µ!\n\nà¸à¸´à¸¡à¸à¹ "à¹à¸¡à¸à¸¹" à¸à¸¹à¹à¸¡à¸à¸¹\nà¸à¸´à¸¡à¸à¹ "à¹à¸à¹à¸¡" à¹à¸à¹à¸à¹à¸à¹à¸¡à¸ªà¸°à¸ªà¸¡\nà¸à¸´à¸¡à¸à¹ "à¸à¹à¸§à¸¢à¹à¸«à¸¥à¸·à¸­" à¸à¸¹à¸à¸³à¸ªà¸±à¹à¸à¸à¸±à¹à¸à¸«à¸¡à¸'
     });
+  }
+
+  // ===== Postback Event: à¸¥à¸¹à¸à¸à¹à¸²à¸à¸à¸à¸¸à¹à¸¡à¸ªà¸°à¸ªà¸¡à¹à¸à¹à¸¡ =====
+  if (event.type === 'postback') {
+    const data = new URLSearchParams(event.postback.data);
+    const action = data.get('action');
+
+    if (action === 'useCode') {
+      const code = data.get('code');
+      const userId = event.source.userId;
+      const result = await useCode(code, userId);
+      let replyText;
+
+      if (result.error === 'not_found') {
+        replyText = 'â à¹à¸¡à¹à¸à¸à¸£à¸«à¸±à¸ªà¸à¸µà¹ à¸à¸£à¸¸à¸à¸²à¸à¸£à¸§à¸à¸ªà¸­à¸à¸­à¸µà¸à¸à¸£à¸±à¹à¸';
+      } else if (result.error === 'already_used') {
+        replyText = 'â à¸£à¸«à¸±à¸ªà¸à¸µà¹à¸à¸¹à¸à¹à¸à¹à¹à¸à¹à¸¥à¹à¸§';
+      } else if (result.error === 'expired') {
+        replyText = 'â à¸£à¸«à¸±à¸ªà¸à¸µà¹à¸«à¸¡à¸à¸­à¸²à¸¢à¸¸à¹à¸¥à¹à¸§ à¸à¸£à¸¸à¸à¸²à¸à¸­à¸£à¸«à¸±à¸ªà¹à¸«à¸¡à¹à¸à¸²à¸à¸à¸à¸±à¸à¸à¸²à¸';
+      } else if (result.error) {
+        replyText = 'â à¹à¸à¸´à¸à¸à¹à¸­à¸à¸´à¸à¸à¸¥à¸²à¸ à¸à¸£à¸¸à¸à¸²à¸¥à¸­à¸à¹à¸«à¸¡à¹';
+      } else {
+        var ch = result.channel || 'walkin';
+        const user = await addPoints(userId, result.points, ch);
+        updateUserName(userId);
+
+        var chLabel = ch === 'online' ? 'ð à¸­à¸­à¸à¹à¸¥à¸à¹' : 'ðª à¸«à¸à¹à¸²à¸£à¹à¸²à¸';
+        var currentPts = ch === 'online' ? user.pointsOnline : user.pointsWalkin;
+        var redeemCost = ch === 'online' ? REDEEM_COST_ONLINE : REDEEM_COST_WALKIN;
+        var remaining = redeemCost - currentPts;
+
+        if (currentPts >= redeemCost) {
+          replyText = 'â à¸ªà¸°à¸ªà¸¡ ' + result.points + ' à¹à¸à¹à¸¡ à¸ªà¸³à¹à¸£à¹à¸! ' + chLabel + '\n\nð¯ à¹à¸à¹à¸¡' + (ch === 'online' ? 'à¸­à¸­à¸à¹à¸¥à¸à¹' : 'à¸«à¸à¹à¸²à¸£à¹à¸²à¸') + ': ' + currentPts + ' à¹à¸à¹à¸¡\nð à¹à¸¥à¸à¹à¸à¸£à¸·à¹à¸­à¸à¸à¸·à¹à¸¡à¸à¸£à¸µà¹à¸à¹!\n\nà¸à¸´à¸¡à¸à¹ "' + (ch === 'online' ? 'à¹à¸¥à¸à¸­' : 'à¹à¸¥à¸') + '" à¹à¸à¸·à¹à¸­à¹à¸à¹à¸ªà¸´à¸à¸à¸´à¹';
+        } else {
+          replyText = 'â à¸ªà¸°à¸ªà¸¡ ' + result.points + ' à¹à¸à¹à¸¡ à¸ªà¸³à¹à¸£à¹à¸! ' + chLabel + '\n\nð¯ à¹à¸à¹à¸¡' + (ch === 'online' ? 'à¸­à¸­à¸à¹à¸¥à¸à¹' : 'à¸«à¸à¹à¸²à¸£à¹à¸²à¸') + ': ' + currentPts + ' à¹à¸à¹à¸¡\nð à¸­à¸µà¸ ' + remaining + ' à¹à¸à¹à¸¡à¹à¸¥à¸à¹à¸à¸£à¸·à¹à¸­à¸à¸à¸·à¹à¸¡à¸à¸£à¸µ!';
+        }
+      }
+      return client.replyMessage(event.replyToken, { type: 'text', text: replyText });
+    }
+    return null;
   }
 
   if (event.type !== 'message' || event.message.type !== 'text') return null;
@@ -439,43 +479,203 @@ async function handleEvent(event) {
 
   let replyText;
 
-  // ===== คำสั่งพนักงาน: สร้าง:1234:00003:3 หรือ สร้าง:1234:00003:3:ร หรือ สร้าง:1234:00003:3:อ =====
-  const createMatch = msg.match(/^สร้าง[:\s](\d{4})[:\s]([A-Za-z0-9\/]+)[:\s](\d+)(?:[:\s]([รอ]))?$/);
+  // ===== à¸à¸³à¸ªà¸±à¹à¸à¸à¸à¸±à¸à¸à¸²à¸: à¸ªà¸£à¹à¸²à¸:1234:00003:3 à¸«à¸£à¸·à¸­ à¸ªà¸£à¹à¸²à¸:1234:00003:3:à¸£ à¸«à¸£à¸·à¸­ à¸ªà¸£à¹à¸²à¸:1234:00003:3:à¸­ =====
+  const createMatch = msg.match(/^à¸ªà¸£à¹à¸²à¸[:\s](\d{4})[:\s]([A-Za-z0-9\/]+)[:\s](\d+)(?:[:\s]([à¸£à¸­]))?$/);
   if (createMatch) {
     const pin = createMatch[1];
     const billNo = createMatch[2];
     const count = parseInt(createMatch[3]);
-    const chFlag = createMatch[4] || 'ร'; // ค่าเริ่มต้น = หน้าร้าน
-    const channel = chFlag === 'อ' ? 'online' : 'walkin';
-    const channelLabel = channel === 'online' ? '🛒 ออนไลน์' : '🏪 หน้าร้าน';
+    const chFlag = createMatch[4] || 'à¸£'; // à¸à¹à¸²à¹à¸£à¸´à¹à¸¡à¸à¹à¸ = à¸«à¸à¹à¸²à¸£à¹à¸²à¸
+    const channel = chFlag === 'à¸­' ? 'online' : 'walkin';
+    const channelLabel = channel === 'online' ? 'ð à¸­à¸­à¸à¹à¸¥à¸à¹' : 'ðª à¸«à¸à¹à¸²à¸£à¹à¸²à¸';
 
     if (pin !== ADMIN_PIN) {
-      replyText = '❌ รหัสไม่ถูกต้อง';
+      replyText = 'â à¸£à¸«à¸±à¸ªà¹à¸¡à¹à¸à¸¹à¸à¸à¹à¸­à¸';
     } else if (count < 1 || count > 20) {
-      replyText = '❌ ใส่จำนวน 1-20 แก้ว';
+      replyText = 'â à¹à¸ªà¹à¸à¸³à¸à¸§à¸ 1-20 à¹à¸à¹à¸§';
     } else if (await isBillUsed(billNo)) {
-      replyText = '❌ บิลเลขที่ ' + billNo + ' ถูกใช้ไปแล้ว!';
+      replyText = 'â à¸à¸´à¸¥à¹à¸¥à¸à¸à¸µà¹ ' + billNo + ' à¸à¸¹à¸à¹à¸à¹à¹à¸à¹à¸¥à¹à¸§!';
     } else {
       const code = await createCode(userId, count, billNo, channel);
-      replyText = '✅ สร้างรหัสสำเร็จ!\n\n🎫 รหัส: ' + code + '\n🧾 บิล: ' + billNo + '\n☕ จำนวน: ' + count + ' แต้ม\n' + channelLabel + '\n⏰ หมดอายุใน 24 ชั่วโมง\n\nบอกรหัสนี้ให้ลูกค้า';
+      replyText = 'â à¸ªà¸£à¹à¸²à¸à¸£à¸«à¸±à¸ªà¸ªà¸³à¹à¸£à¹à¸!\n\nð« à¸£à¸«à¸±à¸ª: ' + code + '\nð§¾ à¸à¸´à¸¥: ' + billNo + '\nâ à¸à¸³à¸à¸§à¸: ' + count + ' à¹à¸à¹à¸¡\n' + channelLabel + '\nâ° à¸«à¸¡à¸à¸­à¸²à¸¢à¸¸à¹à¸ 24 à¸à¸±à¹à¸§à¹à¸¡à¸\n\nà¸à¸­à¸à¸£à¸«à¸±à¸ªà¸à¸µà¹à¹à¸«à¹à¸¥à¸¹à¸à¸à¹à¸²';
     }
     return client.replyMessage(event.replyToken, { type: 'text', text: replyText });
   }
 
-  // ===== คำสั่งพนักงาน: เช็ค:1234 =====
-  const checkMatch = msg.match(/^เช็ค[:\s](\d{4})$/);
+  // ===== à¸à¸³à¸ªà¸±à¹à¸à¸à¸à¸±à¸à¸à¸²à¸: à¸ªà¸£à¹à¸²à¸à¸ªà¹à¸:1234:00003:3:à¸£:à¸à¸·à¹à¸­à¸¥à¸¹à¸à¸à¹à¸² â à¸ªà¸£à¹à¸²à¸à¹à¸à¹à¸ + à¸ªà¹à¸ Flex Message à¹à¸«à¹à¸¥à¸¹à¸à¸à¹à¸² =====
+  const createSendMatch = msg.match(/^à¸ªà¸£à¹à¸²à¸à¸ªà¹à¸[:\s](\d{4})[:\s]([A-Za-z0-9\/]+)[:\s](\d+)(?:[:\s]([à¸£à¸­]))?[:\s](.+)$/);
+  if (createSendMatch) {
+    const pin = createSendMatch[1];
+    const billNo = createSendMatch[2];
+    const count = parseInt(createSendMatch[3]);
+    const chFlag = createSendMatch[4] || 'à¸£';
+    const channel = chFlag === 'à¸­' ? 'online' : 'walkin';
+    const channelLabel = channel === 'online' ? 'ð à¸­à¸­à¸à¹à¸¥à¸à¹' : 'ðª à¸«à¸à¹à¸²à¸£à¹à¸²à¸';
+    const customerName = createSendMatch[5].trim();
+
+    if (pin !== ADMIN_PIN) {
+      replyText = 'â à¸£à¸«à¸±à¸ªà¹à¸¡à¹à¸à¸¹à¸à¸à¹à¸­à¸';
+    } else if (count < 1 || count > 20) {
+      replyText = 'â à¹à¸ªà¹à¸à¸³à¸à¸§à¸ 1-20 à¹à¸à¹à¸§';
+    } else if (await isBillUsed(billNo)) {
+      replyText = 'â à¸à¸´à¸¥à¹à¸¥à¸à¸à¸µà¹ ' + billNo + ' à¸à¸¹à¸à¹à¸à¹à¹à¸à¹à¸¥à¹à¸§!';
+    } else {
+      // à¸à¹à¸à¸«à¸²à¸¥à¸¹à¸à¸à¹à¸²à¸à¸²à¸ Google Sheet à¸à¸²à¸¡à¸à¸·à¹à¸­
+      try {
+        var allResult = await callSheetAPI({ action: 'getAllCustomers' });
+        var customers = allResult.customers || [];
+        var found = null;
+        for (var c = 0; c < customers.length; c++) {
+          if (customers[c].name && customers[c].name.toLowerCase().indexOf(customerName.toLowerCase()) !== -1) {
+            found = customers[c];
+            break;
+          }
+        }
+
+        if (!found || !found.userId) {
+          replyText = 'â à¹à¸¡à¹à¸à¸à¸¥à¸¹à¸à¸à¹à¸²à¸à¸·à¹à¸­ "' + customerName + '" à¹à¸à¸£à¸°à¸à¸\n\nà¸¥à¸¹à¸à¸à¹à¸²à¸à¹à¸­à¸à¹à¸à¸´à¹à¸¡à¹à¸à¸·à¹à¸­à¸à¸à¸­à¸à¸à¹à¸­à¸à¸à¸¶à¸à¸à¸°à¸ªà¹à¸à¹à¸à¹';
+        } else {
+          // à¸ªà¸£à¹à¸²à¸à¹à¸à¹à¸
+          const code = await createCode(userId, count, billNo, channel);
+
+          // à¸ªà¸£à¹à¸²à¸ Flex Message à¸à¸£à¹à¸­à¸¡à¸à¸¸à¹à¸¡à¸à¸à¸ªà¸°à¸ªà¸¡à¹à¸à¹à¸¡
+          var flexMsg = {
+            type: 'flex',
+            altText: 'â à¸à¸à¸ªà¸°à¸ªà¸¡ ' + count + ' à¹à¸à¹à¸¡ â Inthanin Cafe',
+            contents: {
+              type: 'bubble',
+              size: 'kilo',
+              header: {
+                type: 'box',
+                layout: 'vertical',
+                backgroundColor: '#2E7D32',
+                paddingAll: '15px',
+                contents: [
+                  {
+                    type: 'text',
+                    text: 'â Inthanin Cafe',
+                    color: '#FFFFFF',
+                    size: 'lg',
+                    weight: 'bold'
+                  },
+                  {
+                    type: 'text',
+                    text: 'à¸ªà¸°à¸ªà¸¡à¹à¸à¹à¸¡à¸£à¸±à¸à¹à¸à¸£à¸·à¹à¸­à¸à¸à¸·à¹à¸¡à¸à¸£à¸µ!',
+                    color: '#C8E6C9',
+                    size: 'xs',
+                    margin: 'sm'
+                  }
+                ]
+              },
+              body: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'md',
+                paddingAll: '15px',
+                contents: [
+                  {
+                    type: 'text',
+                    text: 'à¸à¸¸à¸à¹à¸à¹à¸£à¸±à¸ ' + count + ' à¹à¸à¹à¸¡!',
+                    size: 'xl',
+                    weight: 'bold',
+                    align: 'center',
+                    color: '#2E7D32'
+                  },
+                  {
+                    type: 'separator',
+                    margin: 'md'
+                  },
+                  {
+                    type: 'box',
+                    layout: 'vertical',
+                    spacing: 'sm',
+                    margin: 'md',
+                    contents: [
+                      {
+                        type: 'box',
+                        layout: 'horizontal',
+                        contents: [
+                          { type: 'text', text: 'ð§¾ à¸à¸´à¸¥:', size: 'sm', color: '#888888', flex: 3 },
+                          { type: 'text', text: billNo, size: 'sm', weight: 'bold', flex: 5 }
+                        ]
+                      },
+                      {
+                        type: 'box',
+                        layout: 'horizontal',
+                        contents: [
+                          { type: 'text', text: 'ð à¸à¹à¸­à¸à¸à¸²à¸:', size: 'sm', color: '#888888', flex: 3 },
+                          { type: 'text', text: channelLabel, size: 'sm', weight: 'bold', flex: 5 }
+                        ]
+                      },
+                      {
+                        type: 'box',
+                        layout: 'horizontal',
+                        contents: [
+                          { type: 'text', text: 'â° à¸«à¸¡à¸à¸­à¸²à¸¢à¸¸:', size: 'sm', color: '#888888', flex: 3 },
+                          { type: 'text', text: '24 à¸à¸±à¹à¸§à¹à¸¡à¸', size: 'sm', flex: 5 }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              footer: {
+                type: 'box',
+                layout: 'vertical',
+                paddingAll: '15px',
+                contents: [
+                  {
+                    type: 'button',
+                    style: 'primary',
+                    color: '#2E7D32',
+                    height: 'md',
+                    action: {
+                      type: 'postback',
+                      label: 'à¸à¸à¸ªà¸°à¸ªà¸¡à¹à¸à¹à¸¡ â¨',
+                      data: 'action=useCode&code=' + code,
+                      displayText: 'à¸ªà¸°à¸ªà¸¡:' + code
+                    }
+                  },
+                  {
+                    type: 'text',
+                    text: 'à¸«à¸£à¸·à¸­à¸à¸´à¸¡à¸à¹ à¸ªà¸°à¸ªà¸¡:' + code,
+                    size: 'xxs',
+                    color: '#AAAAAA',
+                    align: 'center',
+                    margin: 'md'
+                  }
+                ]
+              }
+            }
+          };
+
+          // à¸ªà¹à¸ push message à¹à¸à¸«à¸²à¸¥à¸¹à¸à¸à¹à¸²à¹à¸à¸¢à¸à¸£à¸
+          await client.pushMessage(found.userId, flexMsg);
+
+          replyText = 'â à¸ªà¸£à¹à¸²à¸à¸£à¸«à¸±à¸ªà¹à¸¥à¸°à¸ªà¹à¸à¹à¸«à¹à¸¥à¸¹à¸à¸à¹à¸²à¹à¸¥à¹à¸§!\n\nð« à¸£à¸«à¸±à¸ª: ' + code + '\nð§¾ à¸à¸´à¸¥: ' + billNo + '\nâ à¸à¸³à¸à¸§à¸: ' + count + ' à¹à¸à¹à¸¡\n' + channelLabel + '\nð¤ à¸ªà¹à¸à¹à¸«à¹: ' + found.name + '\n\nð± à¸¥à¸¹à¸à¸à¹à¸²à¹à¸à¹à¸£à¸±à¸ Flex Message à¸à¸£à¹à¸­à¸¡à¸à¸¸à¹à¸¡à¸à¸à¸ªà¸°à¸ªà¸¡à¹à¸à¹à¸¡à¹à¸¥à¹à¸§!';
+        }
+      } catch (e) {
+        console.error('Error createSend:', e);
+        replyText = 'â à¹à¸à¸´à¸à¸à¹à¸­à¸à¸´à¸à¸à¸¥à¸²à¸à¹à¸à¸à¸²à¸£à¸ªà¹à¸ à¸à¸£à¸¸à¸à¸²à¸¥à¸­à¸à¹à¸«à¸¡à¹';
+      }
+    }
+    return client.replyMessage(event.replyToken, { type: 'text', text: replyText });
+  }
+
+  // ===== à¸à¸³à¸ªà¸±à¹à¸à¸à¸à¸±à¸à¸à¸²à¸: à¹à¸à¹à¸:1234 =====
+  const checkMatch = msg.match(/^à¹à¸à¹à¸[:\s](\d{4})$/);
   if (checkMatch) {
     const pin = checkMatch[1];
     if (pin !== ADMIN_PIN) {
-      replyText = '❌ รหัสไม่ถูกต้อง';
+      replyText = 'â à¸£à¸«à¸±à¸ªà¹à¸¡à¹à¸à¸¹à¸à¸à¹à¸­à¸';
     } else {
       try {
         var allResult = await callSheetAPI({ action: 'getAllCustomers' });
         var users = allResult.customers || [];
         if (users.length === 0) {
-          replyText = '📊 ยังไม่มีลูกค้าในระบบ';
+          replyText = 'ð à¸¢à¸±à¸à¹à¸¡à¹à¸¡à¸µà¸¥à¸¹à¸à¸à¹à¸²à¹à¸à¸£à¸°à¸à¸';
         } else {
-          let summary = '📊 สรุปแต้มลูกค้า (' + users.length + ' คน)\n\n';
+          let summary = 'ð à¸ªà¸£à¸¸à¸à¹à¸à¹à¸¡à¸¥à¸¹à¸à¸à¹à¸² (' + users.length + ' à¸à¸)\n\n';
           let totalW = 0, totalO = 0;
           for (var i = 0; i < users.length && i < 20; i++) {
             var u = users[i];
@@ -483,28 +683,28 @@ async function handleEvent(event) {
             var po = Number(u.pointsOnline) || 0;
             totalW += pw;
             totalO += po;
-            var name = u.name || 'ไม่ทราบชื่อ';
-            summary += (i + 1) + '. ' + name + '\n   🏪 ' + pw + ' | 🛒 ' + po + ' | แลก: ' + ((Number(u.redeemedWalkin) || 0) + (Number(u.redeemedOnline) || 0)) + ' ครั้ง\n';
+            var name = u.name || 'à¹à¸¡à¹à¸à¸£à¸²à¸à¸à¸·à¹à¸­';
+            summary += (i + 1) + '. ' + name + '\n   ðª ' + pw + ' | ð ' + po + ' | à¹à¸¥à¸: ' + ((Number(u.redeemedWalkin) || 0) + (Number(u.redeemedOnline) || 0)) + ' à¸à¸£à¸±à¹à¸\n';
           }
-          if (users.length > 20) summary += '...(แสดง 20 คนแรก)\n';
-          summary += '\n🏪 แต้มหน้าร้านรวม: ' + totalW;
-          summary += '\n🛒 แต้มออนไลน์รวม: ' + totalO;
+          if (users.length > 20) summary += '...(à¹à¸ªà¸à¸ 20 à¸à¸à¹à¸£à¸)\n';
+          summary += '\nðª à¹à¸à¹à¸¡à¸«à¸à¹à¸²à¸£à¹à¸²à¸à¸£à¸§à¸¡: ' + totalW;
+          summary += '\nð à¹à¸à¹à¸¡à¸­à¸­à¸à¹à¸¥à¸à¹à¸£à¸§à¸¡: ' + totalO;
           replyText = summary;
         }
       } catch (e) {
         console.error('Error checking:', e);
-        replyText = '❌ เกิดข้อผิดพลาดในการดึงข้อมูล';
+        replyText = 'â à¹à¸à¸´à¸à¸à¹à¸­à¸à¸´à¸à¸à¸¥à¸²à¸à¹à¸à¸à¸²à¸£à¸à¸¶à¸à¸à¹à¸­à¸¡à¸¹à¸¥';
       }
     }
     return client.replyMessage(event.replyToken, { type: 'text', text: replyText });
   }
 
-  // ===== คำสั่งพนักงาน: สรุป:1234 หรือ สรุป:1234:14/11/2026 =====
-  const summaryMatch = msg.match(/^สรุป[:\s](\d{4})(?:[:\s](\d{1,2})\/(\d{1,2})\/(\d{4}))?$/);
+  // ===== à¸à¸³à¸ªà¸±à¹à¸à¸à¸à¸±à¸à¸à¸²à¸: à¸ªà¸£à¸¸à¸:1234 à¸«à¸£à¸·à¸­ à¸ªà¸£à¸¸à¸:1234:14/11/2026 =====
+  const summaryMatch = msg.match(/^à¸ªà¸£à¸¸à¸[:\s](\d{4})(?:[:\s](\d{1,2})\/(\d{1,2})\/(\d{4}))?$/);
   if (summaryMatch) {
     const pin = summaryMatch[1];
     if (pin !== ADMIN_PIN) {
-      replyText = '❌ รหัสไม่ถูกต้อง';
+      replyText = 'â à¸£à¸«à¸±à¸ªà¹à¸¡à¹à¸à¸¹à¸à¸à¹à¸­à¸';
     } else {
       try {
         var dateStr = null;
@@ -513,172 +713,172 @@ async function handleEvent(event) {
         }
         var s = await callSheetAPI({ action: 'getDailySummary', date: dateStr });
 
-        var text = '📋 สรุปยอดประจำวัน\n';
-        text += '📅 วันที่: ' + s.date + '\n';
-        text += '━━━━━━━━━━━━━━━\n';
-        text += '🧾 จำนวนบิล: ' + s.billCount + ' บิล\n';
+        var text = 'ð à¸ªà¸£à¸¸à¸à¸¢à¸­à¸à¸à¸£à¸°à¸à¸³à¸§à¸±à¸\n';
+        text += 'ð à¸§à¸±à¸à¸à¸µà¹: ' + s.date + '\n';
+        text += 'âââââââââââââââ\n';
+        text += 'ð§¾ à¸à¸³à¸à¸§à¸à¸à¸´à¸¥: ' + s.billCount + ' à¸à¸´à¸¥\n';
         if (s.billCountWalkin > 0 || s.billCountOnline > 0) {
-          text += '   🏪 หน้าร้าน: ' + (s.billCountWalkin || 0) + ' บิล (' + (s.totalPointsWalkin || 0) + ' แต้ม)\n';
-          text += '   🛒 ออนไลน์: ' + (s.billCountOnline || 0) + ' บิล (' + (s.totalPointsOnline || 0) + ' แต้ม)\n';
+          text += '   ðª à¸«à¸à¹à¸²à¸£à¹à¸²à¸: ' + (s.billCountWalkin || 0) + ' à¸à¸´à¸¥ (' + (s.totalPointsWalkin || 0) + ' à¹à¸à¹à¸¡)\n';
+          text += '   ð à¸­à¸­à¸à¹à¸¥à¸à¹: ' + (s.billCountOnline || 0) + ' à¸à¸´à¸¥ (' + (s.totalPointsOnline || 0) + ' à¹à¸à¹à¸¡)\n';
         }
         if (s.bills && s.bills.length > 0) {
-          text += '📝 รายละเอียดบิล:\n';
+          text += 'ð à¸£à¸²à¸¢à¸¥à¸°à¹à¸­à¸µà¸¢à¸à¸à¸´à¸¥:\n';
           for (var b = 0; b < s.bills.length; b++) {
-            var chIcon = s.bills[b].channel === 'online' ? '🛒' : '🏪';
-            text += '   ' + (b + 1) + '. ' + s.bills[b].billNo + ' (' + s.bills[b].points + ' แต้ม) ' + chIcon + '\n';
+            var chIcon = s.bills[b].channel === 'online' ? 'ð' : 'ðª';
+            text += '   ' + (b + 1) + '. ' + s.bills[b].billNo + ' (' + s.bills[b].points + ' à¹à¸à¹à¸¡) ' + chIcon + '\n';
           }
         }
-        text += '━━━━━━━━━━━━━━━\n';
-        text += '☕ แต้มที่ให้ทั้งหมด: ' + s.totalPoints + ' แต้ม\n';
-        text += '✅ รหัสที่ใช้แล้ว: ' + s.usedCodes + ' รหัส\n';
-        text += '⏳ รหัสยังไม่ได้ใช้: ' + s.unusedCodes + ' รหัส\n';
-        text += '━━━━━━━━━━━━━━━\n';
-        text += '🎁 จำนวนแลกฟรี: ' + s.redeemCount + ' ครั้ง\n';
+        text += 'âââââââââââââââ\n';
+        text += 'â à¹à¸à¹à¸¡à¸à¸µà¹à¹à¸«à¹à¸à¸±à¹à¸à¸«à¸¡à¸: ' + s.totalPoints + ' à¹à¸à¹à¸¡\n';
+        text += 'â à¸£à¸«à¸±à¸ªà¸à¸µà¹à¹à¸à¹à¹à¸¥à¹à¸§: ' + s.usedCodes + ' à¸£à¸«à¸±à¸ª\n';
+        text += 'â³ à¸£à¸«à¸±à¸ªà¸¢à¸±à¸à¹à¸¡à¹à¹à¸à¹à¹à¸à¹: ' + s.unusedCodes + ' à¸£à¸«à¸±à¸ª\n';
+        text += 'âââââââââââââââ\n';
+        text += 'ð à¸à¸³à¸à¸§à¸à¹à¸¥à¸à¸à¸£à¸µ: ' + s.redeemCount + ' à¸à¸£à¸±à¹à¸\n';
         if ((s.redeemCountWalkin || 0) > 0 || (s.redeemCountOnline || 0) > 0) {
-          text += '   🏪 หน้าร้าน: ' + (s.redeemCountWalkin || 0) + ' ครั้ง\n';
-          text += '   🛒 ออนไลน์: ' + (s.redeemCountOnline || 0) + ' ครั้ง\n';
+          text += '   ðª à¸«à¸à¹à¸²à¸£à¹à¸²à¸: ' + (s.redeemCountWalkin || 0) + ' à¸à¸£à¸±à¹à¸\n';
+          text += '   ð à¸­à¸­à¸à¹à¸¥à¸à¹: ' + (s.redeemCountOnline || 0) + ' à¸à¸£à¸±à¹à¸\n';
         }
         if (s.redeemNames && s.redeemNames.length > 0) {
-          text += '👤 ผู้แลก: ' + s.redeemNames.join(', ') + '\n';
+          text += 'ð¤ à¸à¸¹à¹à¹à¸¥à¸: ' + s.redeemNames.join(', ') + '\n';
         }
         if (s.billCount === 0 && s.redeemCount === 0) {
-          text += '\n💤 ไม่มีรายการในวันนี้';
+          text += '\nð¤ à¹à¸¡à¹à¸¡à¸µà¸£à¸²à¸¢à¸à¸²à¸£à¹à¸à¸§à¸±à¸à¸à¸µà¹';
         }
         replyText = text;
       } catch (e) {
         console.error('Error summary:', e);
-        replyText = '❌ เกิดข้อผิดพลาดในการดึงข้อมูล';
+        replyText = 'â à¹à¸à¸´à¸à¸à¹à¸­à¸à¸´à¸à¸à¸¥à¸²à¸à¹à¸à¸à¸²à¸£à¸à¸¶à¸à¸à¹à¸­à¸¡à¸¹à¸¥';
       }
     }
     return client.replyMessage(event.replyToken, { type: 'text', text: replyText });
   }
 
-  // ===== คำสั่งพนักงาน: ยืนยัน:1234:R-A7X92K =====
-  var verifyMatch = msg.match(/^ยืนยัน[:\s](\d{4})[:\s](R-[A-Za-z0-9]{6})$/i);
+  // ===== à¸à¸³à¸ªà¸±à¹à¸à¸à¸à¸±à¸à¸à¸²à¸: à¸¢à¸·à¸à¸¢à¸±à¸:1234:R-A7X92K =====
+  var verifyMatch = msg.match(/^à¸¢à¸·à¸à¸¢à¸±à¸[:\s](\d{4})[:\s](R-[A-Za-z0-9]{6})$/i);
   if (verifyMatch) {
     var pin4 = verifyMatch[1];
     var rCode = verifyMatch[2].toUpperCase();
     if (pin4 !== ADMIN_PIN) {
-      replyText = '❌ รหัสไม่ถูกต้อง';
+      replyText = 'â à¸£à¸«à¸±à¸ªà¹à¸¡à¹à¸à¸¹à¸à¸à¹à¸­à¸';
     } else {
       var vResult = await verifyRedeem(rCode);
       if (vResult.error === 'not_found') {
-        replyText = '❌ ไม่พบรหัสแลก ' + rCode + '\n\n⚠️ อาจเป็นรหัสปลอม!';
+        replyText = 'â à¹à¸¡à¹à¸à¸à¸£à¸«à¸±à¸ªà¹à¸¥à¸ ' + rCode + '\n\nâ ï¸ à¸­à¸²à¸à¹à¸à¹à¸à¸£à¸«à¸±à¸ªà¸à¸¥à¸­à¸¡!';
       } else if (vResult.error === 'already_confirmed') {
-        var chLabel2 = String(vResult.redeem.channel || 'walkin') === 'online' ? '🛒 ออนไลน์' : '🏪 หน้าร้าน';
-        replyText = '⚠️ รหัส ' + rCode + ' ถูกยืนยันไปแล้ว!\n\n👤 ชื่อ: ' + (vResult.redeem.name || 'ไม่ทราบ') + '\n' + chLabel2 + '\n\n❌ ไม่สามารถใช้ซ้ำได้';
+        var chLabel2 = String(vResult.redeem.channel || 'walkin') === 'online' ? 'ð à¸­à¸­à¸à¹à¸¥à¸à¹' : 'ðª à¸«à¸à¹à¸²à¸£à¹à¸²à¸';
+        replyText = 'â ï¸ à¸£à¸«à¸±à¸ª ' + rCode + ' à¸à¸¹à¸à¸¢à¸·à¸à¸¢à¸±à¸à¹à¸à¹à¸¥à¹à¸§!\n\nð¤ à¸à¸·à¹à¸­: ' + (vResult.redeem.name || 'à¹à¸¡à¹à¸à¸£à¸²à¸') + '\n' + chLabel2 + '\n\nâ à¹à¸¡à¹à¸ªà¸²à¸¡à¸²à¸£à¸à¹à¸à¹à¸à¹à¸³à¹à¸à¹';
       } else if (vResult.success) {
-        var chLabel3 = String(vResult.redeem.channel || 'walkin') === 'online' ? '🛒 ออนไลน์' : '🏪 หน้าร้าน';
-        replyText = '✅ ยืนยันสำเร็จ! รหัส ' + rCode + '\n\n👤 ชื่อลูกค้า: ' + (vResult.redeem.name || 'ไม่ทราบ') + '\n' + chLabel3 + '\n\n☕ ให้เครื่องดื่มฟรี 1 แก้วได้เลย!';
+        var chLabel3 = String(vResult.redeem.channel || 'walkin') === 'online' ? 'ð à¸­à¸­à¸à¹à¸¥à¸à¹' : 'ðª à¸«à¸à¹à¸²à¸£à¹à¸²à¸';
+        replyText = 'â à¸¢à¸·à¸à¸¢à¸±à¸à¸ªà¸³à¹à¸£à¹à¸! à¸£à¸«à¸±à¸ª ' + rCode + '\n\nð¤ à¸à¸·à¹à¸­à¸¥à¸¹à¸à¸à¹à¸²: ' + (vResult.redeem.name || 'à¹à¸¡à¹à¸à¸£à¸²à¸') + '\n' + chLabel3 + '\n\nâ à¹à¸«à¹à¹à¸à¸£à¸·à¹à¸­à¸à¸à¸·à¹à¸¡à¸à¸£à¸µ 1 à¹à¸à¹à¸§à¹à¸à¹à¹à¸¥à¸¢!';
       } else {
-        replyText = '❌ เกิดข้อผิดพลาด กรุณาลองใหม่';
+        replyText = 'â à¹à¸à¸´à¸à¸à¹à¸­à¸à¸´à¸à¸à¸¥à¸²à¸ à¸à¸£à¸¸à¸à¸²à¸¥à¸­à¸à¹à¸«à¸¡à¹';
       }
     }
     return client.replyMessage(event.replyToken, { type: 'text', text: replyText });
   }
 
-  // ===== คำสั่งลูกค้า: สะสม:A7X92K =====
-  const redeemCodeMatch = msg.match(/^สะสม[:\s]([A-Za-z0-9]{6})$/);
+  // ===== à¸à¸³à¸ªà¸±à¹à¸à¸¥à¸¹à¸à¸à¹à¸²: à¸ªà¸°à¸ªà¸¡:A7X92K =====
+  const redeemCodeMatch = msg.match(/^à¸ªà¸°à¸ªà¸¡[:\s]([A-Za-z0-9]{6})$/);
   if (redeemCodeMatch) {
     const code = redeemCodeMatch[1];
     const result = await useCode(code, userId);
 
     if (result.error === 'not_found') {
-      replyText = '❌ ไม่พบรหัสนี้ กรุณาตรวจสอบอีกครั้ง';
+      replyText = 'â à¹à¸¡à¹à¸à¸à¸£à¸«à¸±à¸ªà¸à¸µà¹ à¸à¸£à¸¸à¸à¸²à¸à¸£à¸§à¸à¸ªà¸­à¸à¸­à¸µà¸à¸à¸£à¸±à¹à¸';
     } else if (result.error === 'already_used') {
-      replyText = '❌ รหัสนี้ถูกใช้ไปแล้ว';
+      replyText = 'â à¸£à¸«à¸±à¸ªà¸à¸µà¹à¸à¸¹à¸à¹à¸à¹à¹à¸à¹à¸¥à¹à¸§';
     } else if (result.error === 'expired') {
-      replyText = '❌ รหัสนี้หมดอายุแล้ว กรุณาขอรหัสใหม่จากพนักงาน';
+      replyText = 'â à¸£à¸«à¸±à¸ªà¸à¸µà¹à¸«à¸¡à¸à¸­à¸²à¸¢à¸¸à¹à¸¥à¹à¸§ à¸à¸£à¸¸à¸à¸²à¸à¸­à¸£à¸«à¸±à¸ªà¹à¸«à¸¡à¹à¸à¸²à¸à¸à¸à¸±à¸à¸à¸²à¸';
     } else if (result.error) {
-      replyText = '❌ เกิดข้อผิดพลาด กรุณาลองใหม่';
+      replyText = 'â à¹à¸à¸´à¸à¸à¹à¸­à¸à¸´à¸à¸à¸¥à¸²à¸ à¸à¸£à¸¸à¸à¸²à¸¥à¸­à¸à¹à¸«à¸¡à¹';
     } else {
       var ch = result.channel || 'walkin';
       const user = await addPoints(userId, result.points, ch);
-      updateUserName(userId); // ไม่ต้อง await
+      updateUserName(userId); // à¹à¸¡à¹à¸à¹à¸­à¸ await
 
-      var chLabel = ch === 'online' ? '🛒 ออนไลน์' : '🏪 หน้าร้าน';
+      var chLabel = ch === 'online' ? 'ð à¸­à¸­à¸à¹à¸¥à¸à¹' : 'ðª à¸«à¸à¹à¸²à¸£à¹à¸²à¸';
       var currentPts = ch === 'online' ? user.pointsOnline : user.pointsWalkin;
       var redeemCost = ch === 'online' ? REDEEM_COST_ONLINE : REDEEM_COST_WALKIN;
       var remaining = redeemCost - currentPts;
 
       if (currentPts >= redeemCost) {
-        replyText = '✅ สะสม ' + result.points + ' แต้ม สำเร็จ! ' + chLabel + '\n\n🎯 แต้ม' + (ch === 'online' ? 'ออนไลน์' : 'หน้าร้าน') + ': ' + currentPts + ' แต้ม\n🎉 แลกเครื่องดื่มฟรีได้!\n\nพิมพ์ "' + (ch === 'online' ? 'แลกอ' : 'แลก') + '" เพื่อใช้สิทธิ์';
+        replyText = 'â à¸ªà¸°à¸ªà¸¡ ' + result.points + ' à¹à¸à¹à¸¡ à¸ªà¸³à¹à¸£à¹à¸! ' + chLabel + '\n\nð¯ à¹à¸à¹à¸¡' + (ch === 'online' ? 'à¸­à¸­à¸à¹à¸¥à¸à¹' : 'à¸«à¸à¹à¸²à¸£à¹à¸²à¸') + ': ' + currentPts + ' à¹à¸à¹à¸¡\nð à¹à¸¥à¸à¹à¸à¸£à¸·à¹à¸­à¸à¸à¸·à¹à¸¡à¸à¸£à¸µà¹à¸à¹!\n\nà¸à¸´à¸¡à¸à¹ "' + (ch === 'online' ? 'à¹à¸¥à¸à¸­' : 'à¹à¸¥à¸') + '" à¹à¸à¸·à¹à¸­à¹à¸à¹à¸ªà¸´à¸à¸à¸´à¹';
       } else {
-        replyText = '✅ สะสม ' + result.points + ' แต้ม สำเร็จ! ' + chLabel + '\n\n🎯 แต้ม' + (ch === 'online' ? 'ออนไลน์' : 'หน้าร้าน') + ': ' + currentPts + ' แต้ม\n📍 อีก ' + remaining + ' แต้มแลกเครื่องดื่มฟรี!';
+        replyText = 'â à¸ªà¸°à¸ªà¸¡ ' + result.points + ' à¹à¸à¹à¸¡ à¸ªà¸³à¹à¸£à¹à¸! ' + chLabel + '\n\nð¯ à¹à¸à¹à¸¡' + (ch === 'online' ? 'à¸­à¸­à¸à¹à¸¥à¸à¹' : 'à¸«à¸à¹à¸²à¸£à¹à¸²à¸') + ': ' + currentPts + ' à¹à¸à¹à¸¡\nð à¸­à¸µà¸ ' + remaining + ' à¹à¸à¹à¸¡à¹à¸¥à¸à¹à¸à¸£à¸·à¹à¸­à¸à¸à¸·à¹à¸¡à¸à¸£à¸µ!';
       }
     }
     return client.replyMessage(event.replyToken, { type: 'text', text: replyText });
   }
 
-  // ===== คำสั่งลูกค้า: แต้ม =====
-  if (msg === 'แต้ม' || msg === 'คะแนน' || msg === 'points') {
+  // ===== à¸à¸³à¸ªà¸±à¹à¸à¸¥à¸¹à¸à¸à¹à¸²: à¹à¸à¹à¸¡ =====
+  if (msg === 'à¹à¸à¹à¸¡' || msg === 'à¸à¸°à¹à¸à¸' || msg === 'points') {
     const user = await getPoints(userId);
     updateUserName(userId);
     var remainW = REDEEM_COST_WALKIN - user.pointsWalkin;
     var remainO = REDEEM_COST_ONLINE - user.pointsOnline;
     var totalRedeemed = user.redeemedWalkin + user.redeemedOnline;
 
-    replyText = '🎯 แต้มสะสมของคุณ\n\n';
-    // หน้าร้าน
-    replyText += '🏪 หน้าร้าน: ' + user.pointsWalkin + ' แต้ม';
+    replyText = 'ð¯ à¹à¸à¹à¸¡à¸ªà¸°à¸ªà¸¡à¸à¸­à¸à¸à¸¸à¸\n\n';
+    // à¸«à¸à¹à¸²à¸£à¹à¸²à¸
+    replyText += 'ðª à¸«à¸à¹à¸²à¸£à¹à¸²à¸: ' + user.pointsWalkin + ' à¹à¸à¹à¸¡';
     if (user.pointsWalkin >= REDEEM_COST_WALKIN) {
-      replyText += ' 🎉 แลกได้!';
+      replyText += ' ð à¹à¸¥à¸à¹à¸à¹!';
     } else {
-      replyText += ' (อีก ' + remainW + ' แลกฟรี)';
+      replyText += ' (à¸­à¸µà¸ ' + remainW + ' à¹à¸¥à¸à¸à¸£à¸µ)';
     }
     replyText += '\n';
-    // ออนไลน์
-    replyText += '🛒 ออนไลน์: ' + user.pointsOnline + ' แต้ม';
+    // à¸­à¸­à¸à¹à¸¥à¸à¹
+    replyText += 'ð à¸­à¸­à¸à¹à¸¥à¸à¹: ' + user.pointsOnline + ' à¹à¸à¹à¸¡';
     if (user.pointsOnline >= REDEEM_COST_ONLINE) {
-      replyText += ' 🎉 แลกได้!';
+      replyText += ' ð à¹à¸¥à¸à¹à¸à¹!';
     } else {
-      replyText += ' (อีก ' + remainO + ' แลกฟรี)';
+      replyText += ' (à¸­à¸µà¸ ' + remainO + ' à¹à¸¥à¸à¸à¸£à¸µ)';
     }
     replyText += '\n\n';
-    replyText += '🏆 รวมสะสม: ' + (user.totalWalkin + user.totalOnline) + ' แต้ม\n';
-    replyText += '🎁 แลกไปแล้ว: ' + totalRedeemed + ' ครั้ง';
+    replyText += 'ð à¸£à¸§à¸¡à¸ªà¸°à¸ªà¸¡: ' + (user.totalWalkin + user.totalOnline) + ' à¹à¸à¹à¸¡\n';
+    replyText += 'ð à¹à¸¥à¸à¹à¸à¹à¸¥à¹à¸§: ' + totalRedeemed + ' à¸à¸£à¸±à¹à¸';
 
     if (user.pointsWalkin >= REDEEM_COST_WALKIN || user.pointsOnline >= REDEEM_COST_ONLINE) {
       replyText += '\n\n';
-      if (user.pointsWalkin >= REDEEM_COST_WALKIN) replyText += '👉 พิมพ์ "แลก" ใช้สิทธิ์หน้าร้าน\n';
-      if (user.pointsOnline >= REDEEM_COST_ONLINE) replyText += '👉 พิมพ์ "แลกอ" ใช้สิทธิ์ออนไลน์';
+      if (user.pointsWalkin >= REDEEM_COST_WALKIN) replyText += 'ð à¸à¸´à¸¡à¸à¹ "à¹à¸¥à¸" à¹à¸à¹à¸ªà¸´à¸à¸à¸´à¹à¸«à¸à¹à¸²à¸£à¹à¸²à¸\n';
+      if (user.pointsOnline >= REDEEM_COST_ONLINE) replyText += 'ð à¸à¸´à¸¡à¸à¹ "à¹à¸¥à¸à¸­" à¹à¸à¹à¸ªà¸´à¸à¸à¸´à¹à¸­à¸­à¸à¹à¸¥à¸à¹';
     }
   }
-  // ===== คำสั่งลูกค้า: แลก / แลกร / แลกอ =====
-  else if (msg === 'แลก' || msg === 'แลกร' || msg === 'redeem') {
-    // แลกแต้มหน้าร้าน
+  // ===== à¸à¸³à¸ªà¸±à¹à¸à¸¥à¸¹à¸à¸à¹à¸²: à¹à¸¥à¸ / à¹à¸¥à¸à¸£ / à¹à¸¥à¸à¸­ =====
+  else if (msg === 'à¹à¸¥à¸' || msg === 'à¹à¸¥à¸à¸£' || msg === 'redeem') {
+    // à¹à¸¥à¸à¹à¸à¹à¸¡à¸«à¸à¹à¸²à¸£à¹à¸²à¸
     var redeemResult = await redeemPoints(userId, 'walkin');
     if (redeemResult) {
-      replyText = '🎉🎉🎉 แลกสำเร็จ! 🎉🎉🎉\n\n🏪 ช่องทาง: หน้าร้าน\n☕ เครื่องดื่มฟรี 1 แก้ว!\n🔑 รหัสยืนยัน: ' + redeemResult.redeemCode + '\n🎯 แต้มหน้าร้านคงเหลือ: ' + redeemResult.user.pointsWalkin + ' แต้ม\n\n📌 แสดงรหัสยืนยันให้พนักงาน';
+      replyText = 'ððð à¹à¸¥à¸à¸ªà¸³à¹à¸£à¹à¸! ððð\n\nðª à¸à¹à¸­à¸à¸à¸²à¸: à¸«à¸à¹à¸²à¸£à¹à¸²à¸\nâ à¹à¸à¸£à¸·à¹à¸­à¸à¸à¸·à¹à¸¡à¸à¸£à¸µ 1 à¹à¸à¹à¸§!\nð à¸£à¸«à¸±à¸ªà¸¢à¸·à¸à¸¢à¸±à¸: ' + redeemResult.redeemCode + '\nð¯ à¹à¸à¹à¸¡à¸«à¸à¹à¸²à¸£à¹à¸²à¸à¸à¸à¹à¸«à¸¥à¸·à¸­: ' + redeemResult.user.pointsWalkin + ' à¹à¸à¹à¸¡\n\nð à¹à¸ªà¸à¸à¸£à¸«à¸±à¸ªà¸¢à¸·à¸à¸¢à¸±à¸à¹à¸«à¹à¸à¸à¸±à¸à¸à¸²à¸';
     } else {
       var user4 = await getPoints(userId);
-      replyText = '❌ แต้มหน้าร้านยังไม่ครบ\n\n🏪 แต้มหน้าร้าน: ' + user4.pointsWalkin + ' แต้ม\n📍 ต้องสะสมอีก ' + (REDEEM_COST_WALKIN - user4.pointsWalkin) + ' แต้ม (ครบ ' + REDEEM_COST_WALKIN + ' แลกฟรี)';
+      replyText = 'â à¹à¸à¹à¸¡à¸«à¸à¹à¸²à¸£à¹à¸²à¸à¸¢à¸±à¸à¹à¸¡à¹à¸à¸£à¸\n\nðª à¹à¸à¹à¸¡à¸«à¸à¹à¸²à¸£à¹à¸²à¸: ' + user4.pointsWalkin + ' à¹à¸à¹à¸¡\nð à¸à¹à¸­à¸à¸ªà¸°à¸ªà¸¡à¸­à¸µà¸ ' + (REDEEM_COST_WALKIN - user4.pointsWalkin) + ' à¹à¸à¹à¸¡ (à¸à¸£à¸ ' + REDEEM_COST_WALKIN + ' à¹à¸¥à¸à¸à¸£à¸µ)';
     }
-  } else if (msg === 'แลกอ') {
-    // แลกแต้มออนไลน์
+  } else if (msg === 'à¹à¸¥à¸à¸­') {
+    // à¹à¸¥à¸à¹à¸à¹à¸¡à¸­à¸­à¸à¹à¸¥à¸à¹
     var redeemResult2 = await redeemPoints(userId, 'online');
     if (redeemResult2) {
-      replyText = '🎉🎉🎉 แลกสำเร็จ! 🎉🎉🎉\n\n🛒 ช่องทาง: ออนไลน์\n☕ เครื่องดื่มฟรี 1 แก้ว!\n🔑 รหัสยืนยัน: ' + redeemResult2.redeemCode + '\n🎯 แต้มออนไลน์คงเหลือ: ' + redeemResult2.user.pointsOnline + ' แต้ม\n\n📌 แสดงรหัสยืนยันให้พนักงาน';
+      replyText = 'ððð à¹à¸¥à¸à¸ªà¸³à¹à¸£à¹à¸! ððð\n\nð à¸à¹à¸­à¸à¸à¸²à¸: à¸­à¸­à¸à¹à¸¥à¸à¹\nâ à¹à¸à¸£à¸·à¹à¸­à¸à¸à¸·à¹à¸¡à¸à¸£à¸µ 1 à¹à¸à¹à¸§!\nð à¸£à¸«à¸±à¸ªà¸¢à¸·à¸à¸¢à¸±à¸: ' + redeemResult2.redeemCode + '\nð¯ à¹à¸à¹à¸¡à¸­à¸­à¸à¹à¸¥à¸à¹à¸à¸à¹à¸«à¸¥à¸·à¸­: ' + redeemResult2.user.pointsOnline + ' à¹à¸à¹à¸¡\n\nð à¹à¸ªà¸à¸à¸£à¸«à¸±à¸ªà¸¢à¸·à¸à¸¢à¸±à¸à¹à¸«à¹à¸à¸à¸±à¸à¸à¸²à¸';
     } else {
       var user5 = await getPoints(userId);
-      replyText = '❌ แต้มออนไลน์ยังไม่ครบ\n\n🛒 แต้มออนไลน์: ' + user5.pointsOnline + ' แต้ม\n📍 ต้องสะสมอีก ' + (REDEEM_COST_ONLINE - user5.pointsOnline) + ' แต้ม (ครบ ' + REDEEM_COST_ONLINE + ' แลกฟรี)';
+      replyText = 'â à¹à¸à¹à¸¡à¸­à¸­à¸à¹à¸¥à¸à¹à¸¢à¸±à¸à¹à¸¡à¹à¸à¸£à¸\n\nð à¹à¸à¹à¸¡à¸­à¸­à¸à¹à¸¥à¸à¹: ' + user5.pointsOnline + ' à¹à¸à¹à¸¡\nð à¸à¹à¸­à¸à¸ªà¸°à¸ªà¸¡à¸­à¸µà¸ ' + (REDEEM_COST_ONLINE - user5.pointsOnline) + ' à¹à¸à¹à¸¡ (à¸à¸£à¸ ' + REDEEM_COST_ONLINE + ' à¹à¸¥à¸à¸à¸£à¸µ)';
     }
   }
-  // ===== เมนู =====
-  else if (msg === 'เมนู' || msg === 'menu') {
-    replyText = 'เนื่องจากเป็นโปรโมชั่นพิเศษ\n☕ เมนูที่แลกได้เฉพาะ Inthanin Coffee มัยลาภเท่านั้น\n\nอเมริกาโน่\nเอสเพรสโซ่\nโกโก้\nชาเขียว\nชาไทย\nชามะนาว\nออลเดย์\nชาดำ\n\n🏪 หน้าร้าน: สะสมครบ ' + REDEEM_COST_WALKIN + ' แต้ม แลกฟรี!\n🛒 ออนไลน์: สะสมครบ ' + REDEEM_COST_ONLINE + ' แต้ม แลกฟรี!';
+  // ===== à¹à¸¡à¸à¸¹ =====
+  else if (msg === 'à¹à¸¡à¸à¸¹' || msg === 'menu') {
+    replyText = 'à¹à¸à¸·à¹à¸­à¸à¸à¸²à¸à¹à¸à¹à¸à¹à¸à¸£à¹à¸¡à¸à¸±à¹à¸à¸à¸´à¹à¸¨à¸©\nâ à¹à¸¡à¸à¸¹à¸à¸µà¹à¹à¸¥à¸à¹à¸à¹à¹à¸à¸à¸²à¸° Inthanin Coffee à¸¡à¸±à¸¢à¸¥à¸²à¸ à¹à¸à¹à¸²à¸à¸±à¹à¸\n\nà¸­à¹à¸¡à¸£à¸´à¸à¸²à¹à¸à¹\nà¹à¸­à¸ªà¹à¸à¸£à¸ªà¹à¸à¹\nà¹à¸à¹à¸à¹\nà¸à¸²à¹à¸à¸µà¸¢à¸§\nà¸à¸²à¹à¸à¸¢\nà¸à¸²à¸¡à¸°à¸à¸²à¸§\nà¸­à¸­à¸¥à¹à¸à¸¢à¹\nà¸à¸²à¸à¸³\n\nðª à¸«à¸à¹à¸²à¸£à¹à¸²à¸: à¸ªà¸°à¸ªà¸¡à¸à¸£à¸ ' + REDEEM_COST_WALKIN + ' à¹à¸à¹à¸¡ à¹à¸¥à¸à¸à¸£à¸µ!\nð à¸­à¸­à¸à¹à¸¥à¸à¹: à¸ªà¸°à¸ªà¸¡à¸à¸£à¸ ' + REDEEM_COST_ONLINE + ' à¹à¸à¹à¸¡ à¹à¸¥à¸à¸à¸£à¸µ!';
   }
-  // ===== ช่วยเหลือ =====
-  else if (msg === 'help' || msg === 'ช่วยเหลือ') {
-    replyText = '🤖 คำสั่งลูกค้า:\n\n🎫 "สะสม:รหัส" - ใช้รหัสสะสมแต้ม\n🎯 "แต้ม" - เช็คแต้มสะสม\n🎁 "แลก" - แลกแต้มหน้าร้าน (' + REDEEM_COST_WALKIN + ' แต้ม)\n🎁 "แลกอ" - แลกแต้มออนไลน์ (' + REDEEM_COST_ONLINE + ' แต้ม)\n📋 "เมนู" - ดูเมนูเครื่องดื่ม\n❓ "ช่วยเหลือ" - ดูคำสั่งทั้งหมด';
+  // ===== à¸à¹à¸§à¸¢à¹à¸«à¸¥à¸·à¸­ =====
+  else if (msg === 'help' || msg === 'à¸à¹à¸§à¸¢à¹à¸«à¸¥à¸·à¸­') {
+    replyText = 'ð¤ à¸à¸³à¸ªà¸±à¹à¸à¸¥à¸¹à¸à¸à¹à¸²:\n\nð« "à¸ªà¸°à¸ªà¸¡:à¸£à¸«à¸±à¸ª" - à¹à¸à¹à¸£à¸«à¸±à¸ªà¸ªà¸°à¸ªà¸¡à¹à¸à¹à¸¡\nð¯ "à¹à¸à¹à¸¡" - à¹à¸à¹à¸à¹à¸à¹à¸¡à¸ªà¸°à¸ªà¸¡\nð "à¹à¸¥à¸" - à¹à¸¥à¸à¹à¸à¹à¸¡à¸«à¸à¹à¸²à¸£à¹à¸²à¸ (' + REDEEM_COST_WALKIN + ' à¹à¸à¹à¸¡)\nð "à¹à¸¥à¸à¸­" - à¹à¸¥à¸à¹à¸à¹à¸¡à¸­à¸­à¸à¹à¸¥à¸à¹ (' + REDEEM_COST_ONLINE + ' à¹à¸à¹à¸¡)\nð "à¹à¸¡à¸à¸¹" - à¸à¸¹à¹à¸¡à¸à¸¹à¹à¸à¸£à¸·à¹à¸­à¸à¸à¸·à¹à¸¡\nâ "à¸à¹à¸§à¸¢à¹à¸«à¸¥à¸·à¸­" - à¸à¸¹à¸à¸³à¸ªà¸±à¹à¸à¸à¸±à¹à¸à¸«à¸¡à¸';
   }
-  // ===== FAQ / ข้อความทั่วไป =====
+  // ===== FAQ / à¸à¹à¸­à¸à¸§à¸²à¸¡à¸à¸±à¹à¸§à¹à¸ =====
   else {
     var faqAnswer = findFAQAnswer(msg);
     if (faqAnswer) {
       replyText = faqAnswer;
     } else {
-      replyText = 'สวัสดีค่ะ! ยินดีต้อนรับสู่ Inthanin Cafe ☕\n\n🏪 หน้าร้าน: สะสมครบ ' + REDEEM_COST_WALKIN + ' แต้ม แลกฟรี!\n🛒 ออนไลน์: สะสมครบ ' + REDEEM_COST_ONLINE + ' แต้ม แลกฟรี!\n\nพิมพ์ "เมนู" ดูเมนู\nพิมพ์ "แต้ม" เช็คแต้มสะสม\nพิมพ์ "ช่วยเหลือ" ดูคำสั่งทั้งหมด';
+      replyText = 'à¸ªà¸§à¸±à¸ªà¸à¸µà¸à¹à¸°! à¸¢à¸´à¸à¸à¸µà¸à¹à¸­à¸à¸£à¸±à¸à¸ªà¸¹à¹ Inthanin Cafe â\n\nðª à¸«à¸à¹à¸²à¸£à¹à¸²à¸: à¸ªà¸°à¸ªà¸¡à¸à¸£à¸ ' + REDEEM_COST_WALKIN + ' à¹à¸à¹à¸¡ à¹à¸¥à¸à¸à¸£à¸µ!\nð à¸­à¸­à¸à¹à¸¥à¸à¹: à¸ªà¸°à¸ªà¸¡à¸à¸£à¸ ' + REDEEM_COST_ONLINE + ' à¹à¸à¹à¸¡ à¹à¸¥à¸à¸à¸£à¸µ!\n\nà¸à¸´à¸¡à¸à¹ "à¹à¸¡à¸à¸¹" à¸à¸¹à¹à¸¡à¸à¸¹\nà¸à¸´à¸¡à¸à¹ "à¹à¸à¹à¸¡" à¹à¸à¹à¸à¹à¸à¹à¸¡à¸ªà¸°à¸ªà¸¡\nà¸à¸´à¸¡à¸à¹ "à¸à¹à¸§à¸¢à¹à¸«à¸¥à¸·à¸­" à¸à¸¹à¸à¸³à¸ªà¸±à¹à¸à¸à¸±à¹à¸à¸«à¸¡à¸';
     }
   }
 
