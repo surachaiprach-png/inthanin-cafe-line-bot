@@ -688,4 +688,3 @@ async function handleEvent(event) {
 app.get('/', (req, res) => { res.send('Inthanin Cafe LINE Bot V2 is running!'); });
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => { console.log('Bot V2 running on port ' + PORT); });
-h
