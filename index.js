@@ -400,6 +400,39 @@ app.post('/webhook', line.middleware(config), (req, res) => {
 });
 
 async function handleEvent(event) {
+  // ===== Follow Event: ลูกค้าเพิ่มเพื่อน =====
+  if (event.type === 'follow') {
+    const userId = event.source.userId;
+    try {
+      var profile = await client.getProfile(userId);
+      var customerName = profile.displayName || '';
+      // บันทึกลูกค้าใหม่ลง Google Sheet (ถ้ายังไม่มี)
+      var existing = await getPoints(userId);
+      if (!existing || (!existing.pointsWalkin && !existing.pointsOnline && !existing.totalWalkin && !existing.totalOnline)) {
+        await callSheetAPI({
+          action: 'setCustomer',
+          userId: userId,
+          data: {
+            name: customerName,
+            pointsWalkin: 0,
+            pointsOnline: 0,
+            totalWalkin: 0,
+            totalOnline: 0,
+            redeemedWalkin: 0,
+            redeemedOnline: 0
+          }
+        });
+        console.log('New follower registered: ' + customerName + ' (' + userId + ')');
+      }
+    } catch (e) {
+      console.error('Error handling follow event:', e);
+    }
+    return client.replyMessage(event.replyToken, {
+      type: 'text',
+      text: 'สวัสดีค่ะ! ยินดีต้อนรับสู่ Inthanin Cafe ☕\n\n🏪 หน้าร้าน: สะสมครบ 10 แต้ม แลกฟรี!\n🛒 ออนไลน์: สะสมครบ 15 แต้ม แลกฟรี!\n\nพิมพ์ "เมนู" ดูเมนู\nพิมพ์ "แต้ม" เช็คแต้มสะสม\nพิมพ์ "ช่วยเหลือ" ดูคำสั่งทั้งหมด'
+    });
+  }
+
   if (event.type !== 'message' || event.message.type !== 'text') return null;
   const userId = event.source.userId;
   const msg = event.message.text.trim();
